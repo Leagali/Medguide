@@ -2,11 +2,11 @@ import os
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from medguide.domain.models import Base
+from medguide.domain.models import Base, Guideline
 from medguide.infrastructure.settings import Settings
 
 
@@ -42,6 +42,8 @@ def db():
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     yield factory
+    with engine.begin() as connection:
+        connection.execute(update(Guideline).values(current_version_id=None))
     Base.metadata.drop_all(engine)
     engine.dispose()
 
