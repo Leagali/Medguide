@@ -7,7 +7,8 @@ Nenhum serviço de banco foi instalado no sistema. Frontend existente preservado
 ## Evidências executadas
 
 Resultado final: **47 testes aprovados, 1 pulado por ausência de Redis real**;
-cobertura total medida em **87%**. O teste pulado está habilitado na CI.
+cobertura total medida em **87%**. O teste pulado pode ser executado manualmente
+configurando TEST_DATABASE_URL e TEST_REDIS_URL para serviços locais de teste.
 
 - Ruff (lint/formatação) e mypy no backend.
 - Migrações Alembic até head, detecção de drift e rollback/reaplicação no PostgreSQL.
@@ -38,17 +39,19 @@ O snapshot HTML de quatro entradas oficiais está nos fixtures versionados.
 
 Docker/Compose e Redis não estão instalados na máquina. Não foi executado build
 da imagem nem inicialização do Compose localmente. O teste de entrega Celery com
-Redis real é pulado sem TEST_REDIS_URL; está configurado para executar na CI.
-O workflow inclui build/healthchecks/smoke de Compose limpo e testes com PostgreSQL
-e Redis reais, mas não foi disparado remotamente nesta sessão. ARM64 não validado.
+Redis real é pulado sem TEST_REDIS_URL. Build, healthchecks e smoke do Compose
+permanecem como validações manuais em uma máquina com Docker. ARM64 não validado.
+O projeto usa apenas execução local; os arquivos dev/prod e o workflow de CI foram
+removidos conforme a orientação do usuário.
+Após essa simplificação, a estrutura YAML do Compose, mounts, dependências e
+exposição local foram conferidos; os cinco testes de requisição da API passaram.
+Essa conferência de configuração não substitui iniciar os containers com Docker.
 
 Há um aviso de depreciação do TestClient da versão instalada de Starlette em relação
 ao httpx. Os testes passam; não foi introduzida outra biblioteca HTTP para suprimi-lo.
 
-## Antes de produção
+## Limites funcionais
 
-Validar a CI/Compose na infraestrutura alvo, política autorizada de coleta,
-licenciamento de PyMuPDF/distribuição de PDFs e restauração coordenada de banco/RAW.
 Identidade CONITEC deriva do título clínico; renomeações precisam de reconciliação
 manual para evitar uma nova identidade. A política inicial inclui o principal e
 anexos explícitos; portarias/resumos ficam fora do hash textual. OCR é revisão futura.

@@ -3,6 +3,9 @@
 O frontend React existente é independente do monólito modular Python 3.12.
 API FastAPI, Beat e dois workers usam a mesma imagem. PostgreSQL é a fonte
 durável; Redis transporta apenas IDs. RAW fica em volume com endereçamento SHA-256.
+O escopo de execução é exclusivamente local, conforme ajuste solicitado pelo usuário.
+Há apenas `compose.yaml`, com código montado localmente e reload da API; os comandos
+de testes são manuais. Não há provisionamento de dev/prod ou workflow de CI.
 
 ## Plano e validação
 
@@ -15,7 +18,7 @@ durável; Redis transporta apenas IDs. RAW fica em volume com endereçamento SHA
    extração vazia e reexecução.
 4. Execução assíncrona: claims com lease, filas, reconciliador e API restrita;
    testar mensagens repetidas, interrupção, retries e requisições administrativas.
-5. Hardening: conector simulado com três passos, SSRF, CI, smoke real limitado
+5. Hardening: conector simulado com três passos, SSRF, testes locais, smoke real limitado
    e documentação operacional.
 
 O catálogo será verificado diariamente e o conteúdo a cada 30 dias por padrão.
@@ -25,7 +28,7 @@ operações administrativas usam um segredo de serviço.
 ## Etapa 0
 
 Contratos validados, tabelas com constraints de identidade/execução ativa,
-configuração por ambiente e processos Compose definidos. Frontend preservado.
+configuração local por `.env` e processos Compose definidos. Frontend preservado.
 
 ## Etapa 1
 
@@ -63,6 +66,6 @@ na contagem do catálogo produzem catalog_count_changed. /api/metrics expõe bac
 falhas por estágio, artefatos/versões e último sucesso por fonte. Readiness depende
 de banco, schema, Redis e storage; não consulta fontes remotas.
 
-CI inclui lint, formatação, mypy, migração/rollback, testes em PostgreSQL, entrega
-Celery com Redis e smoke de Compose limpo. Consultar validation.md para distinguir
-verificações executadas localmente das preparadas para CI.
+Validação manual inclui lint, formatação, mypy, migração/rollback, testes em
+PostgreSQL e teste opcional de entrega Celery com Redis. Consultar validation.md
+para distinguir verificações executadas daquelas que ainda exigem Docker/Redis local.

@@ -1,16 +1,17 @@
 x-app: &app
   build: .
-  image: ${MEDGUIDE_IMAGE:-medguide:0.1.0}
+  image: medguide-local
   env_file: .env
   volumes:
     - raw_documents:/data/raw
+    - ./src/medguide:/app/src/medguide
   depends_on:
     postgres:
       condition: service_healthy
     redis:
       condition: service_healthy
   networks: [backend, egress]
-  restart: unless-stopped
+  restart: 'no'
   init: true
   security_opt: [no-new-privileges:true]
 
@@ -23,7 +24,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD in .env}
     volumes: [postgres_data:/var/lib/postgresql/data]
     networks: [backend]
-    restart: unless-stopped
+    restart: 'no'
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
@@ -34,7 +35,7 @@ services:
     command: [redis-server, --appendonly, 'yes']
     volumes: [redis_data:/data]
     networks: [backend]
-    restart: unless-stopped
+    restart: 'no'
     healthcheck:
       test: [CMD, redis-cli, ping]
       interval: 5s
@@ -46,6 +47,7 @@ services:
     restart: 'no'
   api:
     <<: *app
+    command: [uvicorn, medguide.api.app:app, --host, 0.0.0.0, --port, '8000', --reload]
     ports: [127.0.0.1:8000:8000]
     depends_on:
       postgres: {condition: service_healthy}
