@@ -45,3 +45,29 @@ def test_contract_rejects_duplicate_reference_keys(fixture_dir):
     payload["document_refs"] *= 2
     with pytest.raises(ValidationError, match="Duplicate"):
         DiscoveredGuideline.model_validate(payload)
+
+
+def test_official_catalog_snapshot(fixture_dir):
+    items = parse_catalog((fixture_dir / "conitec_snapshot.html").read_bytes(), CATALOG_URL)
+    assert len(items) == 4
+    titles = {item.title: item for item in items}
+    assert titles["Asma"].change_date == date(2026, 9, 4)
+    assert titles["Artrite Reumatoide"].change_date == date(2026, 5, 20)
+    assert titles["Câncer de Mama"].change_date == date(2024, 12, 5)
+
+
+def test_annex_keys_are_stable_when_links_reorder():
+    main = '<a href="/main.pdf">Diretriz</a>'
+    a = '<a href="/a.pdf">Anexo A</a>'
+    b = '<a href="/b.pdf">Anexo B</a>'
+
+    def parse(links):
+        return parse_catalog(
+            f"<table><tr><td>{links}</td><td>Sem data</td></tr></table>", CATALOG_URL
+        )[0]
+
+    before, after = parse(main + a + b), parse(main + b + a)
+    assert before.external_key == after.external_key
+    assert {r.reference_key: str(r.source_url) for r in before.document_refs} == {
+        r.reference_key: str(r.source_url) for r in after.document_refs
+    }

@@ -1,0 +1,90 @@
+name: MedGuide validation
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: medguide_test
+          POSTGRES_USER: medguide
+          POSTGRES_PASSWORD: ci-only
+        ports: [127.0.0.1:5432:5432]
+        options: --health-cmd="pg_isready -U medguide -d medguide_test" --health-interval=5s --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: [127.0.0.1:6379:6379]
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-retries=20
+    env:
+      MEDGUIDE_DATABASE_URL: postgresql+psycopg://medguide:ci-only@localhost:5432/medguide_test
+      TEST_DATABASE_URL: postgresql+psycopg://medguide:ci-only@localhost:5432/medguide_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - run: uv run ruff check src/medguide tests scripts migrations
+      - run: uv run ruff format --check src/medguide tests scripts migrations
+      - run: uv run mypy src/medguide
+      - name: Validate migrations and rollback
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+      - run: uv run pytest --cov=medguide --cov-report=term-missing --junitxml=test-results/pytest.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-results
+          path: test-results/
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.1'
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - name: Start clean Compose environment
+        run: |
+          cp .env.example .env
+          sed -i 's/^MEDGUIDE_ADMIN_TOKEN=$/MEDGUIDE_ADMIN_TOKEN=ci-request-token/' .env
+          docker compose -f compose.yaml -f compose.prod.yaml config --quiet
+          docker compose -f compose.yaml -f compose.prod.yaml up --build --wait --wait-timeout 180
+      - name: HTTP smoke
+        env:
+          MEDGUIDE_ADMIN_TOKEN: ci-request-token
+        run: uv run python scripts/smoke_http.py
+      - name: Logs and cleanup of ephemeral CI volumes
+        if: always()
+        run: |
+          docker compose logs --no-color > compose-ci.log
+          docker compose down --volumes
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compose-results
+          path: |
+            test-results/
+            compose-ci.log
