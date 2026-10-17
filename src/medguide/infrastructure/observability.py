@@ -11,6 +11,10 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
         payload.update(getattr(record, "context", {}))
+        payload.setdefault(
+            "correlation_id",
+            payload.get("ingestion_job_id") or payload.get("collection_run_id") or record.name,
+        )
         return json.dumps(payload, ensure_ascii=False)
 
 

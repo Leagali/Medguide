@@ -48,21 +48,25 @@ def parse_catalog(html: str | bytes, catalog_url: str) -> list[DiscoveredGuideli
             continue
         links = first.select("a[href]")
         # Missing links still produce a durable candidate requiring explicit review.
+        title_link = links[0].get_text(" ", strip=True) if links else title
         clean_title = re.split(
-            r"\s*\(?\s*(?:Anexo alterado|Alterado em|Portaria atualizada)", title, flags=re.I
+            r"\s*\(?\s*(?:Anexo alterado|Alterado em|Portaria atualizada)", title_link, flags=re.I
         )[0].rstrip(" -(")
         key = identity(clean_title)
         refs: list[DocumentReference] = []
         seen: set[str] = set()
-        for index, link in enumerate(links):
+        for link in links:
             url = urljoin(catalog_url, str(link["href"]))
             if url in seen or urlsplit(url).scheme not in ("https", "http"):
                 continue
             seen.add(url)
+            is_main = not refs
             refs.append(
                 DocumentReference(
-                    reference_key="main" if index == 0 else f"annex-{index}",
-                    role="main" if index == 0 else "annex",
+                    reference_key="main"
+                    if is_main
+                    else "annex-" + identity(link.get_text(" ", strip=True)),
+                    role="main" if is_main else "annex",
                     source_url=HttpUrl(url),
                     media_hint="pdf" if ".pdf" in url.lower() else "unknown",
                 )
@@ -78,7 +82,9 @@ def parse_catalog(html: str | bytes, catalog_url: str) -> list[DiscoveredGuideli
                 seen.add(url)
                 refs.append(
                     DocumentReference(
-                        reference_key=f"annex-{len(refs)}", role="annex", source_url=HttpUrl(url)
+                        reference_key="annex-" + identity(label),
+                        role="annex",
+                        source_url=HttpUrl(url),
                     )
                 )
         if not refs:

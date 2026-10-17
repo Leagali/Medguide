@@ -18,7 +18,7 @@ from medguide.infrastructure.errors import PipelineError
 from medguide.infrastructure.settings import CATALOG_URL
 from medguide.infrastructure.storage import FileStorage
 from medguide.ingestion.service import IngestionService
-from medguide.repositories.pipeline import PipelineRepository
+from medguide.repositories.pipeline import PipelineRepository, utc
 from medguide.scrapers.contracts import DiscoveredGuideline, FetchedDocument
 
 
@@ -197,3 +197,83 @@ def test_active_run_and_job_are_unique(db, settings):
     with db() as session:
         assert session.scalar(select(func.count()).select_from(IngestionJob)) == 1
         assert session.get(CollectionRun, first_run).status == "COMPLETED"
+
+
+def test_metadata_changes_during_active_job_are_not_lost(db, settings):
+    repo, scraper, _, service, source_id = setup_pipeline(db, settings)
+    initial_job = discover(repo, service, source_id)[0]
+    scraper.items = [scraper.items[0].model_copy(update={"source_change_note": "New observation"})]
+    assert discover(repo, service, source_id) == []
+    assert service.ingest(initial_job) == "VERSION_CREATED"
+    new_job = discover(repo, service, source_id)[0]
+    assert service.ingest(new_job) == "CONTENT_UNCHANGED"
+
+
+def test_multiple_documents_and_reordering(db, settings):
+    repo, scraper, _, service, source_id = setup_pipeline(db, settings)
+    payload = scraper.items[0].model_dump(mode="json")
+    payload["document_refs"].append(
+        {"reference_key": "annex", "role": "annex", "source_url": "https://www.gov.br/annex.pdf"}
+    )
+    scraper.items = [DiscoveredGuideline.model_validate(payload)]
+    assert service.ingest(discover(repo, service, source_id)[0]) == "VERSION_CREATED"
+    payload["document_refs"].reverse()
+    scraper.items = [DiscoveredGuideline.model_validate(payload)]
+    assert discover(repo, service, source_id) == []
+    expire_check(db)
+    assert service.ingest(discover(repo, service, source_id)[0]) == "CONTENT_UNCHANGED"
+
+
+def test_one_failed_item_does_not_block_other_jobs(db, settings):
+    repo, scraper, _, service, source_id = setup_pipeline(db, settings)
+    scraper.items.append(
+        scraper.items[0].model_copy(update={"external_key": "other", "title": "Other"})
+    )
+    original = scraper.fetch_documents
+
+    def fetch(candidate):
+        if candidate.external_key == "asthma":
+            raise PipelineError("HTTP_403")
+        return original(candidate)
+
+    scraper.fetch_documents = fetch
+    jobs = discover(repo, service, source_id)
+    assert len(jobs) == 2
+    assert service.ingest(jobs[0]) == "HTTP_403"
+    assert service.ingest(jobs[1]) == "VERSION_CREATED"
+
+
+def test_long_retry_after_persisted_and_exhausted_leases_fail(db, settings):
+    repo, scraper, _, service, source_id = setup_pipeline(db, settings)
+    scraper.error = PipelineError("RETRY_AFTER_DEFERRED", transient=True, retry_after=900)
+    job_id = discover(repo, service, source_id)[0]
+    assert service.ingest(job_id) == "RETRY_AFTER_DEFERRED"
+    with db.begin() as session:
+        job = session.get(IngestionJob, job_id)
+        assert utc(job.available_at) > now() + timedelta(seconds=890)
+        job.available_at = now() - timedelta(seconds=1)
+    token = repo.claim(IngestionJob, job_id)
+    assert token
+    with db.begin() as session:
+        session.get(IngestionJob, job_id).lease_until = now() - timedelta(seconds=1)
+    assert ("ingest_guideline", job_id) not in repo.reconcile()
+    with db() as session:
+        assert session.get(IngestionJob, job_id).status == "FAILED"
+
+
+def test_known_content_reversion_is_recorded_without_duplicate_version(db, settings):
+    repo, scraper, _, service, source_id = setup_pipeline(db, settings)
+    original = scraper.data
+    assert service.ingest(discover(repo, service, source_id)[0]) == "VERSION_CREATED"
+    scraper.data = pdf_bytes("Changed dose: 10 mg/day")
+    expire_check(db)
+    assert service.ingest(discover(repo, service, source_id)[0]) == "VERSION_CREATED"
+    scraper.data = original
+    expire_check(db)
+    assert service.ingest(discover(repo, service, source_id)[0]) == "CONTENT_REVERTED"
+    with db() as session:
+        assert session.scalar(select(func.count()).select_from(GuidelineVersion)) == 2
+        current = session.get(
+            GuidelineVersion, session.scalar(select(Guideline.current_version_id))
+        )
+        assert current.observed_version == 1

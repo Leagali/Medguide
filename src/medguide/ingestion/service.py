@@ -2,7 +2,9 @@ import logging
 import time
 from collections.abc import Callable
 
+from billiard.exceptions import SoftTimeLimitExceeded
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 
 from medguide.domain.models import CollectionRun, IngestionJob, Source
@@ -18,7 +20,7 @@ logger = logging.getLogger(__name__)
 def classify(error: Exception) -> PipelineError:
     if isinstance(error, PipelineError):
         return error
-    if isinstance(error, (OSError, SQLAlchemyError)):
+    if isinstance(error, (OSError, SQLAlchemyError, RedisError, SoftTimeLimitExceeded)):
         return PipelineError(type(error).__name__.upper(), transient=True)
     if isinstance(error, ValidationError):
         return PipelineError("CONTRACT_INVALID")
@@ -43,10 +45,25 @@ class IngestionService:
         started = time.monotonic()
         try:
             source = self.repository.run_source(run_id)
+            if not source.enabled:
+                raise PipelineError("SOURCE_DISABLED")
             items = self.scraper_factory(source).discover()
             validated = [
                 DiscoveredGuideline.model_validate(item.model_dump(mode="json")) for item in items
             ]
+            previous_count = self.repository.previous_found_count(source.id)
+            if previous_count is not None and previous_count != len(validated):
+                logger.warning(
+                    "catalog_count_changed",
+                    extra={
+                        "context": {
+                            "collection_run_id": run_id,
+                            "source_id": source.id,
+                            "previous_found_count": previous_count,
+                            "found_count": len(validated),
+                        }
+                    },
+                )
             result = self.repository.complete_discovery(run_id, token, validated)
             logger.info(
                 "discovery_completed",
@@ -90,6 +107,9 @@ class IngestionService:
         stage, started = "FETCH", time.monotonic()
         try:
             source, candidate = self.repository.job_context(job_id)
+            if not source.enabled:
+                raise PipelineError("SOURCE_DISABLED")
+            self.repository.set_stage(job_id, token, stage)
             documents = self.scraper_factory(source).fetch_documents(candidate)
             expected = {ref.reference_key: ref.role for ref in candidate.document_refs}
             if (
@@ -102,16 +122,34 @@ class IngestionService:
             for document in documents:
                 if len(document.data) > self.repository.settings.max_download_bytes:
                     raise PipelineError("DOWNLOAD_TOO_LARGE")
+                stage = "PERSIST"
+                self.repository.set_stage(job_id, token, stage)
                 key, raw_hash = self.storage.put(document.data)
                 artifact_id = self.repository.save_raw(job_id, token, document, key, raw_hash)
                 stored.append((artifact_id, document))
             for artifact_id, document in stored:
                 stage = "EXTRACT"
+                self.repository.set_stage(job_id, token, stage)
+                phase_started = time.monotonic()
                 extracted = extract(document.data, document.media_type)
+                logger.info(
+                    "document_extracted",
+                    extra={
+                        "context": {
+                            "ingestion_job_id": job_id,
+                            "artifact_id": artifact_id,
+                            "stage": stage,
+                            "page_count": len(extracted.pages),
+                            "duration_ms": int((time.monotonic() - phase_started) * 1000),
+                        }
+                    },
+                )
                 stage = "NORMALIZE"
+                self.repository.set_stage(job_id, token, stage)
                 sha256 = content_hash(extracted)
                 self.repository.save_extraction(job_id, token, artifact_id, extracted, sha256)
             stage = "PERSIST"
+            self.repository.set_stage(job_id, token, stage)
             result = self.repository.complete_ingestion(job_id, token, [a for a, _ in stored])
             logger.info(
                 "ingestion_completed",

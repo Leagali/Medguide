@@ -14,4 +14,6 @@
 <mxCell id="e6" edge="1" parent="1" source="discovery" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
 <mxCell id="e7" edge="1" parent="1" source="ingestion" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
 <mxCell id="e8" edge="1" parent="1" source="ingestion" target="raw"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e9" edge="1" parent="1" source="discovery" target="redis"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e10" edge="1" parent="1" source="api" target="redis"><mxGeometry relative="1" as="geometry"/></mxCell>
 </root></mxGraphModel></diagram></mxfile>

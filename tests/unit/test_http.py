@@ -99,3 +99,10 @@ def test_download_size_limited(settings):
     with client(settings, lambda _: httpx.Response(200, content=b"12345")) as http:
         with pytest.raises(PipelineError, match="DOWNLOAD_TOO_LARGE"):
             http.get("https://www.gov.br/file", check_robots=False)
+
+
+def test_long_retry_after_is_deferred_without_early_retry(settings):
+    with client(settings, lambda _: httpx.Response(429, headers={"retry-after": "900"})) as http:
+        with pytest.raises(PipelineError) as caught:
+            http.get("https://www.gov.br/file", check_robots=False)
+    assert caught.value.transient and caught.value.retry_after == 900

@@ -41,10 +41,12 @@ class PipelineRepository:
         self.factory = factory
         self.settings = settings
 
-    def reserve_run(self, source_id: str) -> str | None:
+    def reserve_run(self, source_id: str, *, due_only: bool = False) -> str | None:
         with self.factory.begin() as session:
             source = session.scalar(select(Source).where(Source.id == source_id).with_for_update())
             if source is None or not source.enabled:
+                return None
+            if due_only and utc(source.next_due_at) > now():
                 return None
             active = session.scalar(
                 select(CollectionRun.id).where(
@@ -69,6 +71,15 @@ class PipelineRepository:
                 )
             )
 
+    def previous_found_count(self, source_id: str) -> int | None:
+        with self.factory() as session:
+            return session.scalar(
+                select(CollectionRun.found_count)
+                .where(CollectionRun.source_id == source_id, CollectionRun.status == "COMPLETED")
+                .order_by(CollectionRun.finished_at.desc())
+                .limit(1)
+            )
+
     def claim(self, model: type[CollectionRun] | type[IngestionJob], identifier: str) -> str | None:
         token = new_id()
         with self.factory.begin() as session:
@@ -77,8 +88,7 @@ class PipelineRepository:
                 model.status == "PENDING",
                 model.attempt_count < self.settings.task_attempts,
             ]
-            if model is IngestionJob:
-                conditions.append(IngestionJob.available_at <= now())
+            conditions.append(model.available_at <= now())
             result = session.execute(
                 update(model)
                 .where(*conditions)
@@ -218,6 +228,11 @@ class PipelineRepository:
             assert source is not None
             return source, DiscoveredGuideline.model_validate(job.payload_json)
 
+    def set_stage(self, job_id: str, token: str, stage: str) -> None:
+        with self.factory.begin() as session:
+            job = self.owned(session, IngestionJob, job_id, token)
+            job.stage = stage
+
     def save_raw(
         self, job_id: str, token: str, fetched: FetchedDocument, storage_key: str, raw_hash: str
     ) -> str:
@@ -344,8 +359,9 @@ class PipelineRepository:
             record.lease_token, record.lease_until = None, None
             if error.transient and record.attempt_count < self.settings.task_attempts:
                 record.status, record.published_at = "PENDING", None
-                if model is IngestionJob:
-                    record.available_at = now() + timedelta(seconds=60 * record.attempt_count)
+                record.available_at = now() + timedelta(
+                    seconds=max(60 * record.attempt_count, error.retry_after)
+                )
             else:
                 review = error.code in ("EXTRACTION_EMPTY", "DOCUMENT_UNAVAILABLE")
                 record.status = "NEEDS_REVIEW" if review else "FAILED"
@@ -390,7 +406,7 @@ class PipelineRepository:
                             record.error_summary = "DISCOVERY:LEASE_ATTEMPTS_EXHAUSTED"
                         record.lease_token, record.lease_until = None, None
                         continue
-                    if isinstance(record, IngestionJob) and utc(record.available_at) > now():
+                    if utc(record.available_at) > now():
                         continue
                     if record.status == "PROCESSING":
                         record.status, record.published_at = "PENDING", None

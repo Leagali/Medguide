@@ -200,6 +200,6 @@ class SafeHttpClient:
                     seconds = 0
             if seconds > 300:
                 # Defer to the durable task retry instead of retrying before the server permits.
-                raise PipelineError("RETRY_AFTER_DEFERRED", transient=True)
+                raise PipelineError("RETRY_AFTER_DEFERRED", transient=True, retry_after=seconds)
             return max(0, seconds)
         return (2**attempt) + random.uniform(0, 0.5)

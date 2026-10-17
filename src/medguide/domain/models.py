@@ -57,6 +57,7 @@ class CollectionRun(Base):
     queued_count: Mapped[int] = mapped_column(Integer, default=0)
     error_summary: Mapped[str | None] = mapped_column(Text)
     connector_version: Mapped[str] = mapped_column(String(100))
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (
         Index("ix_runs_source_started", "source_id", "started_at"),
         Index(

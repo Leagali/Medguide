@@ -45,3 +45,24 @@ Originais são persistidos antes da extração; páginas brutas e versões dos p
 ficam auditáveis. Observações de metadados e artefatos não geram versões falsas.
 Uma reversão de conteúdo aponta para a versão histórica existente e fica registrada
 no resultado do job. Atualização da versão corrente é transacional.
+
+## Etapas 3 e 4
+
+API restrita, dispatcher Beat, filas discovery/ingestion, jobs duráveis, leases
+com token, publicação após commit e reconciliador implementados. Claims duplicados
+são ignorados. Workers antigos não persistem após perder a posse. Retry-After e
+backoff ficam em available_at; falhas permanentes exigem reprocessamento explícito.
+
+Um segundo scraper existe apenas nos testes de contrato: detalhe → intermediário
+→ PDF. Ele é registrado no mesmo registry e usa detector/versionador sem alterações.
+O limite por domínio é compartilhado via Redis; smoke limitado pode usar
+espaçamento local com um processo. Concurrency inicial dos workers é 1.
+
+Logs JSON registram IDs, estágio, resultados, duração, páginas e tamanhos. Mudanças
+na contagem do catálogo produzem catalog_count_changed. /api/metrics expõe backlog,
+falhas por estágio, artefatos/versões e último sucesso por fonte. Readiness depende
+de banco, schema, Redis e storage; não consulta fontes remotas.
+
+CI inclui lint, formatação, mypy, migração/rollback, testes em PostgreSQL, entrega
+Celery com Redis e smoke de Compose limpo. Consultar validation.md para distinguir
+verificações executadas localmente das preparadas para CI.
