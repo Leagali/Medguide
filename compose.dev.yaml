@@ -1,0 +1,8 @@
+services:
+  api:
+    volumes: [./src/medguide:/app/src/medguide]
+    command: [uvicorn, medguide.api.app:app, --host, 0.0.0.0, --port, '8000', --reload]
+  worker-discovery:
+    volumes: [./src/medguide:/app/src/medguide]
+  worker-ingestion:
+    volumes: [./src/medguide:/app/src/medguide]

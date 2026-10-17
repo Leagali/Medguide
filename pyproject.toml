@@ -1,0 +1,41 @@
+[project]
+name = "medguide-ingestion"
+version = "0.1.0"
+description = "Traceable collection and versioning of official medical guidelines"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "alembic>=1.14,<2", "beautifulsoup4>=4.13,<5", "celery[redis]>=5.5,<6",
+  "fastapi>=0.115,<1", "httpx>=0.28,<1", "lxml>=5.3,<7",
+  "psycopg[binary]>=3.2,<4", "pydantic>=2.10,<3", "pydantic-settings>=2.7,<3",
+  "pymupdf>=1.25,<2", "sqlalchemy>=2.0,<3", "uvicorn>=0.34,<1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "pytest-cov>=6,<8", "respx>=0.22,<1", "ruff>=0.11,<1", "mypy>=1.15,<2", "types-beautifulsoup4", "types-redis", "pyyaml>=6,<7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/medguide"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["postgres: requires TEST_DATABASE_URL pointing to a disposable PostgreSQL database", "live: limited official CONITEC smoke test (explicit opt-in)"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+python_version = "3.12"
+packages = ["medguide"]
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
