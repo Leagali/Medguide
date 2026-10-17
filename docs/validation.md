@@ -35,12 +35,12 @@ SHA-256 RAW: `17f6427eb1b348e4f294240eb5a0e2986c02e0b20f8f6ac668e73dd0e3ec8d5b`.
 Relatórios locais: `test-results/live-smoke.json`, `http-smoke.json`, `postgres.xml`.
 O snapshot HTML de quatro entradas oficiais está nos fixtures versionados.
 
-## Limites desta execução
+## Limites da primeira execução
 
-Docker/Compose e Redis não estão instalados na máquina. Não foi executado build
-da imagem nem inicialização do Compose localmente. O teste de entrega Celery com
-Redis real é pulado sem TEST_REDIS_URL. Build, healthchecks e smoke do Compose
-permanecem como validações manuais em uma máquina com Docker. ARM64 não validado.
+Na primeira rodada, Docker/Compose e Redis não estavam disponíveis no terminal
+Windows. O teste de entrega Celery com Redis real foi pulado sem TEST_REDIS_URL.
+A validação integrada posterior no Ubuntu/WSL, descrita abaixo, resolveu essa
+pendência. ARM64 permanece sem validação.
 O projeto usa apenas execução local; os arquivos dev/prod e o workflow de CI foram
 removidos conforme a orientação do usuário.
 Após essa simplificação, a estrutura YAML do Compose, mounts, dependências e
@@ -70,5 +70,52 @@ token HTTP; repetir o bootstrap preserva a fonte desativada.
 
 A estrutura YAML confirma que API, Beat e workers aguardam o término da migração
 e do cadastro automático. O diagrama Draw.io foi atualizado e seu XML conferido.
-Docker/Compose continuam indisponíveis neste terminal; a inicialização dos containers
-deve ser validada no Ubuntu com os comandos do README.
+Naquela etapa, a inicialização dos containers ainda dependia de validação no Ubuntu.
+Essa validação foi executada na rodada integrada a seguir.
+
+## Validação integrada no Ubuntu/WSL — 17/10/2026
+
+Ambiente real: containers Compose em Ubuntu/WSL, Python 3.12.15, PostgreSQL e Redis.
+A suíte completa executou em outro container, com banco PostgreSQL temporário e
+Redis de teste isolado da aplicação: **58 testes aprovados, nenhum pulado, cobertura
+total de 90%**. O banco temporário foi removido e o Redis de teste limpo ao terminar.
+Lint, formatação e mypy também passaram. Resta um aviso de depreciação do TestClient.
+
+Estado do banco de coletas: uma fonte, **132 diretrizes, 132 artefatos, 132 versões
+textuais e 132 jobs COMPLETED**, sem pendências, falhas ou revisão manual.
+
+`scripts/validate_core.py` auditou todos os documentos:
+
+- 132 originais, totalizando 223.268.316 bytes e 9.063 páginas.
+- SHA-256 do arquivo conferido contra storage_key e raw_sha256 do banco.
+- Cada PDF reextraído; o hash do texto resultante coincidiu com content_sha256.
+- As 132 versões tiveram composição de hashes e texto completo reconstruídos
+  pelos artefatos vinculados, com igualdade exata ao banco.
+- 20.776.139 caracteres de texto, sem caracteres Unicode de substituição U+FFFD.
+- Textos completos de Asma, Câncer de Mama, Diabete Melito Tipo 2 e Acidentes
+  Escorpiônicos foram exportados e lidos em amostras internas, além das capas.
+- Versões retornadas pela API autenticada coincidiram com o texto do banco; PDFs
+  retornados pelo endpoint RAW coincidiram byte a byte com o armazenamento.
+- Uma página original foi renderizada e inspecionada visualmente. O parágrafo e
+  seus valores numéricos foram conferidos no texto salvo da mesma página.
+
+Uma descoberta nova, enfileirada pela API e executada pelo worker real, encontrou
+132 itens e criou **zero novos jobs**. Reenvio de mensagem Celery de um job concluído
+foi recebido e finalizado pelo worker sem aumentar tentativas, artefatos ou versões.
+As contagens permaneceram em 132. Ambos os workers responderam ao ping Celery.
+
+Outra coleta oficial limitada baixou novamente o PDF de Acidentes Escorpiônicos:
+2.659.178 bytes, 50 páginas e 110.609 caracteres, com o mesmo hash RAW anterior.
+Esse ensaio utilizou banco temporário; não criou versões falsas no banco de coletas.
+
+`/docs`, `/openapi.json`, `/healthz` e `/readyz` responderam 200. A rejeição de token
+HTTP inválido também foi verificada. Relatórios e amostras locais:
+`test-results/linux-postgres-redis.xml`, `test-results/live-smoke-ubuntu.json` e
+`test-results/core-validation/` (report.json, replay.json, services.json, quatro
+textos completos e sample-original-page.png). Esses arquivos não são versionados.
+
+Conclusão: o núcleo de ingestão CONITEC está funcional no ambiente local testado.
+A comparação de hashes comprova integridade e consistência da extração; não é
+uma revisão clínica. Texto simples perde formatação de PDF: gráficos permanecem
+no original e sobrescritos podem aparecer concatenados ao texto. OCR, reconciliação
+de títulos renomeados e uma tela de leitura continuam fora da implementação atual.

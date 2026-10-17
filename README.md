@@ -126,6 +126,20 @@ de `.env` ou ambiente. `smoke_live.py` consulta o catálogo e baixa apenas um PD
 validando RAW, extração, persistência e entrega duplicada em banco temporário.
 Relatórios ficam em `test-results/`, ignorado no Git.
 
+Para auditar os documentos já coletados no ambiente local:
+
+```sh
+docker compose exec -T api python - < scripts/validate_core.py
+mkdir -p test-results/core-validation
+docker compose cp api:/tmp/medguide-core-validation/. ./test-results/core-validation
+```
+
+A auditoria confere arquivos originais, hashes, reextração por página, composição
+das versões e texto completo. Quando o token HTTP está configurado, também compara
+textos e PDFs retornados pela API. Exporta amostras completas em `.txt`, uma página
+do PDF original e `report.json`. Não altera os registros nem agenda novas coletas;
+reextrair todos os documentos pode levar alguns minutos.
+
 Frontend: `npm ci`, `npm run dev`, `npm run build`, `npm run lint`.
 
 ## Adicionar fonte
