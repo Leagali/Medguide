@@ -6,8 +6,8 @@ Nenhum serviço de banco foi instalado no sistema. Frontend existente preservado
 
 ## Evidências executadas
 
-Resultado final: **47 testes aprovados, 1 pulado por ausência de Redis real**;
-cobertura total medida em **87%**. O teste pulado pode ser executado manualmente
+Na validação inicial: **47 testes aprovados, 1 pulado por ausência de Redis real**;
+cobertura total medida naquela execução em **87%**. O teste pulado pode ser executado manualmente
 configurando TEST_DATABASE_URL e TEST_REDIS_URL para serviços locais de teste.
 
 - Ruff (lint/formatação) e mypy no backend.
@@ -55,3 +55,20 @@ ao httpx. Os testes passam; não foi introduzida outra biblioteca HTTP para supr
 Identidade CONITEC deriva do título clínico; renomeações precisam de reconciliação
 manual para evitar uma nova identidade. A política inicial inclui o principal e
 anexos explícitos; portarias/resumos ficam fora do hash textual. OCR é revisão futura.
+
+## Cadastro automático e CLI de fontes
+
+Após a implementação do bootstrap e dos comandos locais: **57 testes aprovados,
+1 pulado por ausência de Redis real** na suíte completa com PostgreSQL 17.11.
+Ruff, formatação e mypy passaram. A cobertura não foi recalculada nesta rodada.
+
+Novos testes verificam cadastro repetido/concorrente, preservação de desativação,
+intervalos e agendamento personalizado, reutilização de run ativo, falha de publicação,
+contagens por fonte e mensagens/códigos de saída da CLI. Um ensaio por subprocessos
+executa migrações e bootstrap em banco SQLite novo e usa `python -m medguide` sem
+token HTTP; repetir o bootstrap preserva a fonte desativada.
+
+A estrutura YAML confirma que API, Beat e workers aguardam o término da migração
+e do cadastro automático. O diagrama Draw.io foi atualizado e seu XML conferido.
+Docker/Compose continuam indisponíveis neste terminal; a inicialização dos containers
+deve ser validada no Ubuntu com os comandos do README.

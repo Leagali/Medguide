@@ -6,17 +6,29 @@ Celery/Redis e PyMuPDF. Esta entrega não inclui contas de usuários, IA ou feed
 
 ## Executar localmente
 
-O projeto roda apenas localmente, com um único `compose.yaml`. Copie `.env.example`
-para `.env` e configure `MEDGUIDE_ADMIN_TOKEN`. No PowerShell: `Copy-Item .env.example .env`.
+O projeto roda apenas localmente, com um único `compose.yaml`. No Ubuntu, dentro
+da pasta do projeto:
 
 ```sh
+test -f .env || cp .env.example .env
 docker compose up --build -d
+docker compose exec api python -m medguide sources status conitec_pcdt
+```
+
+A CONITEC é cadastrada e habilitada na primeira inicialização. O scheduler inicia
+a descoberta no próximo ciclo, normalmente em até um minuto. Cadastros existentes,
+desativações e intervalos personalizados são preservados ao reiniciar.
+
+Para conferir a infraestrutura:
+
+```sh
 curl http://127.0.0.1:8000/healthz
 curl http://127.0.0.1:8000/readyz
 docker compose logs -f worker-ingestion
 ```
 
-O job `migrate` aplica Alembic antes de API/workers. Para aplicar migrações manualmente:
+O job `migrate` aplica Alembic e cadastra fontes ausentes antes de API/workers/Beat.
+Para repetir essa preparação manualmente:
 
 ```sh
 docker compose run --rm migrate
@@ -31,24 +43,43 @@ Alterações nas dependências exigem `docker compose up --build -d`.
 Para parar: `docker compose down`. Os volumes e documentos são preservados.
 Os serviços são iniciados manualmente; não há pipeline nem provisionamento de ambientes.
 
-## Cadastrar a CONITEC
+## Operar fontes pelo nome
 
-Nenhuma fonte é ativada automaticamente. Após cadastrar, o scheduler verifica o
-catálogo diariamente e o conteúdo de cada documento a cada 30 dias, por padrão.
-Exemplos em shell POSIX:
+O código `conitec_pcdt` identifica a CONITEC. O catálogo é verificado diariamente e
+o conteúdo de cada documento a cada 30 dias, por padrão. Os comandos locais usam
+as configurações do container e dispensam token, UUID e requisições HTTP:
 
 ```sh
-export MEDGUIDE_ADMIN_TOKEN='token-configurado-no-env'
-curl -X POST http://127.0.0.1:8000/api/sources \
-  -H "Authorization: Bearer $MEDGUIDE_ADMIN_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"code":"conitec_pcdt","connector_key":"conitec_pcdt"}'
-curl -X POST http://127.0.0.1:8000/api/sources/ID_DA_FONTE/discover \
-  -H "Authorization: Bearer $MEDGUIDE_ADMIN_TOKEN"
+docker compose exec api python -m medguide sources list
+docker compose exec api python -m medguide sources run conitec_pcdt
+docker compose exec api python -m medguide sources status conitec_pcdt
+docker compose exec api python -m medguide sources disable conitec_pcdt
+docker compose exec api python -m medguide sources enable conitec_pcdt
 ```
 
-Coleta retorna 202 com ID durável. `published: false` indica publicação adiada para
-o reconciliador, mantendo o registro no banco. Scraping sempre ocorre nos workers.
+`run` salva o pedido e enfileira a descoberta; o download/extração ocorre nos workers.
+Se já houver uma descoberta ativa, informa e reutiliza essa execução. Fonte
+desabilitada precisa de `enable` antes de executar. Falha no Redis mantém o pedido
+salvo e informa que o reconciliador tentará publicá-lo novamente. Mantenha o Beat ativo.
+
+`status` separa a última descoberta dos totais históricos de jobs daquela fonte.
+Uma descoberta COMPLETED pode ter PDFs ainda pendentes. Os totais incluem jobs
+anteriores com falha, mesmo após retry manual. O status consulta o banco; não atesta
+que Beat e workers estão rodando. Confira processos com `docker compose ps -a`.
+
+Todos os comandos aceitam `--json`, por exemplo `sources status conitec_pcdt --json`.
+Para cadastrar fontes padrão ausentes sem coletar, preservando configurações existentes:
+
+```sh
+docker compose exec api python -m medguide sources bootstrap
+```
+
+## API HTTP
+
+Para usar a API ou `scripts/smoke_http.py`, configure `MEDGUIDE_ADMIN_TOKEN` no `.env`
+e recrie os serviços com `docker compose up -d`. Os comandos locais não exigem esse token.
+Pedidos HTTP de coleta retornam 202 com ID durável. `published: false` indica envio
+adiado para o reconciliador, mantendo o registro no banco.
 PATCH `/api/sources/{id}` configura `enabled`, `discovery_interval` e
 `content_recheck_interval` em segundos (mínimo 60).
 
@@ -103,9 +134,12 @@ Frontend: `npm ci`, `npm run dev`, `npm run build`, `npm run lint`.
 2. Retorne contratos validados, com `external_key`/`reference_key` estáveis.
    Defina schema do `source_context`, sem credenciais. Bytes ficam apenas no worker.
 3. Homologue hosts exatos, robots, termos e navegação; use o HTTP restrito e
-   registre a factory em `SCRAPER_REGISTRY`. Scrapers não escrevem SQL.
-4. Inclua a URL homologada na criação administrativa. Hoje só CONITEC é aceita;
-   a API não recebe URLs livres nem imports arbitrários.
+   adicione uma `SourceDefinition` em `SOURCE_DEFINITIONS`, com código, nome, URL,
+   factory e habilitação inicial. O `SCRAPER_REGISTRY` é derivado dessas definições.
+   Scrapers não escrevem SQL.
+4. Execute `docker compose run --rm migrate`: a fonte ausente será cadastrada
+   com os intervalos do `.env`. A API usa a mesma definição aprovada de URL/conector;
+   não recebe URLs livres nem imports arbitrários.
 5. Adicione fixtures e contratos. `tests/contract/test_multistep.py` demonstra
    detalhe → intermediário → PDF sem alterar detector/versionador.
 

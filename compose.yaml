@@ -43,7 +43,7 @@ services:
       retries: 20
   migrate:
     <<: *app
-    command: [alembic, upgrade, head]
+    command: [python, -m, medguide.bootstrap]
     restart: 'no'
   api:
     <<: *app

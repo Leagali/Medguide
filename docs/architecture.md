@@ -69,3 +69,23 @@ de banco, schema, Redis e storage; não consulta fontes remotas.
 Validação manual inclui lint, formatação, mypy, migração/rollback, testes em
 PostgreSQL e teste opcional de entrega Celery com Redis. Consultar validation.md
 para distinguir verificações executadas daquelas que ainda exigem Docker/Redis local.
+
+## Cadastro automático e comandos locais
+
+O processo migrate executa `python -m medguide.bootstrap`: primeiro aplica Alembic,
+depois insere fontes padrão ausentes. O Compose só inicia API, Beat e workers após
+essa etapa terminar. A CONITEC é habilitada e fica vencida para descoberta apenas
+no primeiro cadastro; reinícios preservam enabled, intervalos e next_due_at.
+
+SOURCE_DEFINITIONS centraliza código, nome, URL aprovada, factory e habilitação
+inicial; SCRAPER_REGISTRY é derivado desse catálogo. A API usa a mesma definição.
+Bootstrap não acessa a fonte remota nem publica tarefas.
+
+`python -m medguide sources` oferece list, bootstrap, run, status, enable e disable
+por código, com saída legível ou --json. O serviço usa o mesmo repositório de
+reserva transacional e publicação dos workers. Requisições concorrentes reutilizam
+o run ativo; o cadastro concorrente respeita a unicidade de sources.code.
+
+Status separa descoberta de contagens históricas de jobs por fonte. A CLI usa
+acesso local ao banco no container e não exige token HTTP. A autenticação da API
+é preservada. Não há alterações no schema nem no pipeline de extração/versionamento.

@@ -42,6 +42,13 @@ class PipelineRepository:
         self.settings = settings
 
     def reserve_run(self, source_id: str, *, due_only: bool = False) -> str | None:
+        reservation = self.reserve_run_details(source_id, due_only=due_only)
+        return reservation[0] if reservation else None
+
+    def reserve_run_details(
+        self, source_id: str, *, due_only: bool = False
+    ) -> tuple[str, bool] | None:
+        """Return (run_id, reused), deciding under the same source row lock."""
         with self.factory.begin() as session:
             source = session.scalar(select(Source).where(Source.id == source_id).with_for_update())
             if source is None or not source.enabled:
@@ -54,14 +61,14 @@ class PipelineRepository:
                 )
             )
             if active:
-                return active
+                return active, True
             run = CollectionRun(
                 source_id=source.id, connector_version=self.settings.connector_version
             )
             session.add(run)
             source.next_due_at = now() + timedelta(seconds=source.discovery_interval)
             session.flush()
-            return run.id
+            return run.id, False
 
     def due_sources(self) -> list[str]:
         with self.factory() as session:

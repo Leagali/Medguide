@@ -16,4 +16,10 @@
 <mxCell id="e8" edge="1" parent="1" source="ingestion" target="raw"><mxGeometry relative="1" as="geometry"/></mxCell>
 <mxCell id="e9" edge="1" parent="1" source="discovery" target="redis"><mxGeometry relative="1" as="geometry"/></mxCell>
 <mxCell id="e10" edge="1" parent="1" source="api" target="redis"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="bootstrap" value="Inicialização / Alembic + cadastro de fontes" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="20" y="260" width="180" height="70" as="geometry"/></mxCell>
+<mxCell id="cli" value="CLI local / sources por código" style="rounded=1;whiteSpace=wrap;html=1" vertex="1" parent="1"><mxGeometry x="270" y="280" width="180" height="70" as="geometry"/></mxCell>
+<mxCell id="e11" edge="1" parent="1" source="bootstrap" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e12" value="antes de iniciar" style="dashed=1" edge="1" parent="1" source="bootstrap" target="beat"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e13" edge="1" parent="1" source="cli" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e14" edge="1" parent="1" source="cli" target="redis"><mxGeometry relative="1" as="geometry"/></mxCell>
 </root></mxGraphModel></diagram></mxfile>

@@ -24,10 +24,10 @@ from medguide.domain.models import (
 )
 from medguide.infrastructure.db import get_session, session_factory
 from medguide.infrastructure.observability import configure_logging
-from medguide.infrastructure.settings import CATALOG_URL, Settings, get_settings
+from medguide.infrastructure.settings import Settings, get_settings
 from medguide.infrastructure.storage import FileStorage
 from medguide.repositories.pipeline import ACTIVE, PipelineRepository
-from medguide.scrapers.registry import SCRAPER_REGISTRY
+from medguide.scrapers.registry import SOURCE_DEFINITIONS
 from medguide.workers.publishing import publish
 
 
@@ -130,12 +130,20 @@ def sources(session: Db, limit: Limit = 50, offset: Offset = 0) -> list[dict[str
 
 @api.post("/sources", status_code=201)
 def create_source(payload: SourceCreate, session: Db, settings: Config) -> dict[str, Any]:
-    if payload.connector_key not in SCRAPER_REGISTRY or payload.connector_key != "conitec_pcdt":
+    definition = next(
+        (
+            definition
+            for definition in SOURCE_DEFINITIONS.values()
+            if definition.connector_key == payload.connector_key
+        ),
+        None,
+    )
+    if definition is None:
         raise HTTPException(422, "Connector is not homologated")
     source = Source(
         code=payload.code,
         connector_key=payload.connector_key,
-        base_url=CATALOG_URL,
+        base_url=definition.base_url,
         enabled=payload.enabled,
         discovery_interval=settings.discovery_interval,
         content_recheck_interval=settings.content_recheck_interval,
