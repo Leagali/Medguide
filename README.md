@@ -9,6 +9,250 @@ O frontend React/Vite é uma tela visual de login, sem integração com a API. A
 dos documentos coletados está disponível pela API e pelas exportações descritas
 abaixo. Contas de usuários, tela de leitura, IA e feed ainda não estão implementados.
 
+## Roteiro de demonstração para o professor
+
+Siga os passos na ordem. Os comandos de terminal abaixo usam **Ubuntu ou Ubuntu/WSL
+(Bash)**, dentro da pasta do projeto. Os blocos `sql` e os comandos iniciados por `\`
+são executados dentro do `psql`, aberto no passo 4. Não é necessário instalar um
+cliente PostgreSQL no host nem publicar a porta do banco.
+
+### 1. Iniciar os serviços e verificar a API
+
+```sh
+test -f .env || cp .env.example .env
+docker compose up --build -d
+docker compose ps -a
+```
+
+Espere a API ficar `healthy`. O serviço `migrate` deve terminar com `Exited (0)`;
+PostgreSQL, Redis, API, Beat e os dois workers devem permanecer em execução.
+Depois, verifique os endpoints, que devem retornar `{"status":"ok"}` e
+`{"status":"ready"}`:
+
+```sh
+curl --fail http://127.0.0.1:8000/healthz
+curl --fail http://127.0.0.1:8000/readyz
+```
+
+### 2. Solicitar a coleta e acompanhar o processamento
+
+```sh
+docker compose exec api python -m medguide sources list
+docker compose exec api python -m medguide sources enable conitec_pcdt
+docker compose exec api python -m medguide sources run conitec_pcdt
+docker compose exec api python -m medguide sources status conitec_pcdt
+docker compose logs --tail 30 worker-discovery worker-ingestion
+```
+
+O bootstrap já cadastra a CONITEC e o Beat também pode iniciar a descoberta.
+O comando `run` solicita a execução imediatamente e reutiliza uma descoberta ativa.
+Repita `sources status conitec_pcdt` até a descoberta terminar e os jobs pendentes/em
+processamento concluírem. Se houver falhas ou revisão, consulte seus erros antes da
+apresentação. A primeira coleta pode demorar; prepare os dados antes da aula.
+
+Explique o fluxo: **Beat/CLI → descoberta → jobs no PostgreSQL → filas Redis/Celery
+→ download nos workers → original em volume Docker → texto e versões no PostgreSQL**.
+Repetir a descoberta sem alterações e antes do prazo de reverificação pode encontrar
+as mesmas diretrizes e criar zero novos jobs; isso é esperado.
+
+### 3. Mostrar a documentação e os dados pela API
+
+Abra [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). Clique em **Authorize**
+e informe o valor de `MEDGUIDE_ADMIN_TOKEN` do `.env`, sem o prefixo `Bearer`.
+Execute, nesta ordem:
+
+1. `GET /api/sources`: configuração da fonte.
+2. `GET /api/runs`: resultado das descobertas.
+3. `GET /api/jobs`: processamento dos documentos.
+4. `GET /api/guidelines`: copie um `id` e seu `current_version_id`.
+5. `GET /api/guidelines/{id}/versions`: texto completo em `extracted_text`.
+6. `GET /api/guidelines/{id}/artifacts`: páginas, hashes e IDs dos originais.
+7. `GET /api/artifacts/{id}/raw`: use o ID do **artefato** para baixar o original;
+   se for PDF, salve com extensão `.pdf`.
+
+### 4. Entrar no PostgreSQL pelo container
+
+No terminal Ubuntu, execute:
+
+```sh
+docker compose exec postgres sh -c 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+As variáveis são lidas dentro do container. No prompt do `psql`, execute:
+
+```sql
+\pset pager off
+\dt
+SET default_transaction_read_only = on;
+```
+
+`\dt` lista as tabelas. A sessão fica configurada para consultas de leitura.
+Mantenha esse terminal aberto para os passos 5 a 7; finalize cada query com `;`.
+
+### 5. Conferir cadastro, execução e persistência
+
+Primeiro, mostre a fonte e seus intervalos (em segundos):
+
+```sql
+SELECT code, enabled, discovery_interval, content_recheck_interval, next_due_at
+FROM sources
+ORDER BY code;
+```
+
+Confira quantos registros foram persistidos, sem multiplicar linhas com joins:
+
+```sql
+SELECT
+    (SELECT count(*) FROM sources) AS fontes,
+    (SELECT count(*) FROM guidelines) AS diretrizes,
+    (SELECT count(*) FROM artifacts) AS originais,
+    (SELECT count(*) FROM guideline_versions) AS versoes_textuais,
+    (SELECT count(*) FROM ingestion_jobs) AS jobs;
+```
+
+Mostre os jobs por estado e as últimas descobertas da CONITEC:
+
+```sql
+SELECT status, count(*) AS quantidade
+FROM ingestion_jobs
+GROUP BY status
+ORDER BY status;
+
+SELECT r.id, r.status, r.found_count, r.queued_count, r.attempt_count,
+       r.started_at, r.finished_at, r.error_summary
+FROM collection_runs AS r
+JOIN sources AS s ON s.id = r.source_id
+WHERE s.code = 'conitec_pcdt'
+ORDER BY r.started_at DESC
+LIMIT 5;
+```
+
+`found_count` é a quantidade descoberta no catálogo; `queued_count` é a quantidade
+de jobs criada naquela descoberta. Uma descoberta concluída não significa que os
+jobs de ingestão também terminaram. As contagens dependem do catálogo e do histórico
+local; os 132 documentos da validação anterior não são um valor fixo do sistema.
+
+Liste diretrizes com sua versão corrente e o tamanho do texto salvo:
+
+```sql
+SELECT g.id, g.title, v.id AS version_id, v.observed_version,
+       char_length(v.extracted_text) AS caracteres, v.detected_at
+FROM guidelines AS g
+LEFT JOIN guideline_versions AS v ON v.id = g.current_version_id
+ORDER BY g.title
+LIMIT 10;
+```
+
+O `LEFT JOIN` também mostra diretrizes descobertas que ainda não têm uma versão.
+`observed_version` é a sequência de versões detectadas pelo coletor, não a edição
+oficial publicada pela CONITEC.
+
+### 6. Ler o texto da Asma e consultar seu histórico
+
+Use Asma como exemplo. Se ela ainda não tiver sido extraída, aguarde os jobs ou
+substitua o filtro de título por outra diretriz que já tenha versão corrente.
+
+```sql
+SELECT g.title, v.observed_version,
+       char_length(v.extracted_text) AS caracteres,
+       left(v.extracted_text, 2000) AS inicio_do_texto
+FROM guidelines AS g
+JOIN guideline_versions AS v ON v.id = g.current_version_id
+WHERE g.title ILIKE '%asma%'
+ORDER BY g.title
+LIMIT 1;
+```
+
+Mostre também a sexta página extraída, para ler uma parte interna do documento:
+
+```sql
+SELECT g.title, a.pages_json -> 5 ->> 'page_number' AS pagina,
+       left(a.pages_json -> 5 ->> 'text', 2000) AS texto_da_pagina
+FROM guidelines AS g
+JOIN version_artifacts AS va ON va.version_id = g.current_version_id
+JOIN artifacts AS a ON a.id = va.artifact_id
+WHERE g.title ILIKE '%asma%'
+ORDER BY g.title, a.reference_key
+LIMIT 1;
+```
+
+O índice do array começa em zero: `-> 5` acessa a sexta página. Os trechos são
+limitados apenas para caber na apresentação; o texto completo permanece no banco.
+Consulte as versões e os hashes de conteúdo observados:
+
+```sql
+SELECT g.title, v.observed_version, v.detected_at,
+       char_length(v.extracted_text) AS caracteres, v.composite_content_sha256
+FROM guidelines AS g
+JOIN guideline_versions AS v ON v.guideline_id = g.id
+WHERE g.title ILIKE '%asma%'
+ORDER BY g.title, v.observed_version DESC;
+```
+
+É normal existir apenas uma versão se o coletor ainda não observou mudanças.
+
+### 7. Relacionar a versão ao PDF original e verificar erros
+
+```sql
+SELECT g.title, a.id AS artifact_id, a.source_url, a.media_type,
+       a.size_bytes, json_array_length(a.pages_json) AS paginas,
+       a.extraction_status, a.raw_sha256, a.content_sha256,
+       '/data/raw/' || a.storage_key AS caminho_no_container
+FROM guidelines AS g
+JOIN version_artifacts AS va ON va.version_id = g.current_version_id
+JOIN artifacts AS a ON a.id = va.artifact_id
+WHERE g.title ILIKE '%asma%'
+ORDER BY g.title, a.reference_key;
+
+SELECT g.title, j.id AS job_id, j.status, j.stage, j.attempt_count, j.last_error
+FROM ingestion_jobs AS j
+JOIN guidelines AS g ON g.id = j.guideline_id
+WHERE j.status IN ('FAILED', 'NEEDS_REVIEW')
+ORDER BY j.created_at DESC
+LIMIT 10;
+```
+
+O hash RAW identifica os bytes do original; o hash de conteúdo identifica o texto
+normalizado por página. A versão reúne os hashes dos documentos vinculados.
+Se a consulta de erros retornar zero linhas, não há jobs nesses estados.
+O caminho `/data/raw/...` fica no container, dentro do volume Docker.
+
+Saia do `psql` antes de voltar aos comandos de terminal:
+
+```sql
+\q
+```
+
+### 8. Exportar e abrir o texto completo em um arquivo local
+
+No terminal Ubuntu, exporte a versão corrente da Asma. O comando abaixo usa as
+opções do `psql` para gravar o texto com suas quebras de linha, sem cabeçalhos:
+
+```sh
+mkdir -p test-results
+docker compose exec -T postgres sh -c \
+  'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -A -t -v ON_ERROR_STOP=1' \
+  > test-results/asma.txt <<'SQL'
+SELECT v.extracted_text
+FROM guidelines AS g
+JOIN guideline_versions AS v ON v.id = g.current_version_id
+WHERE g.title ILIKE '%asma%'
+ORDER BY g.title
+LIMIT 1;
+SQL
+less test-results/asma.txt
+```
+
+Use `q` para sair do `less`. O arquivo fica em `test-results/asma.txt`, na pasta
+local do projeto, e é ignorado pelo Git. Se não houver versão para o filtro,
+o arquivo estará vazio; confira o passo 6. As consultas não alteram os dados coletados.
+
+Para uma comprovação adicional de integridade, execute a auditoria de originais,
+textos e API em [Desenvolvimento e testes](#desenvolvimento-e-testes). Para mostrar
+a página visual do frontend, siga [Frontend visual](#frontend-visual); ela não lê
+esses documentos. Ao terminar a demonstração, `docker compose down` para os serviços
+e preserva os volumes com as coletas.
+
 ## Executar localmente
 
 O projeto roda apenas localmente, com um único `compose.yaml`. Para o backend,
