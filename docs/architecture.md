@@ -1,0 +1,91 @@
+# Arquitetura de ingestão MedGuide
+
+O frontend React existente é independente do monólito modular Python 3.12.
+API FastAPI, Beat e dois workers usam a mesma imagem. PostgreSQL é a fonte
+durável; Redis transporta apenas IDs. RAW fica em volume com endereçamento SHA-256.
+O escopo de execução é exclusivamente local, conforme ajuste solicitado pelo usuário.
+Há apenas `compose.yaml`, com código montado localmente e reload da API; os comandos
+de testes são manuais. Não há provisionamento de dev/prod ou workflow de CI.
+
+## Plano e validação
+
+1. Infraestrutura e contratos: lock uv, modelos, migração Alembic, Compose;
+   verificar constraints, migrações e validação dos contratos.
+2. Descoberta CONITEC: parser de tabelas A–Z e HTTP restrito; testar fixtures
+   com notas, datas ausentes, anexos e layout incompatível.
+3. Ingestão: preservar RAW, extrair páginas, normalizar e versionar;
+   testar bytes alterados com mesmo texto, texto alterado, múltiplos arquivos,
+   extração vazia e reexecução.
+4. Execução assíncrona: claims com lease, filas, reconciliador e API restrita;
+   testar mensagens repetidas, interrupção, retries e requisições administrativas.
+5. Hardening: conector simulado com três passos, SSRF, testes locais, smoke real limitado
+   e documentação operacional.
+
+O catálogo será verificado diariamente e o conteúdo a cada 30 dias por padrão.
+As frequências são configuráveis. Não há autenticação de usuários ou IA;
+operações administrativas usam um segredo de serviço.
+
+## Etapa 0
+
+Contratos validados, tabelas com constraints de identidade/execução ativa,
+configuração local por `.env` e processos Compose definidos. Frontend preservado.
+
+## Etapa 1
+
+Parser A–Z e registry CONITEC implementados. Requisição real ao catálogo encontrou
+132 itens. A identidade inicial é o título clínico normalizado com hash, sem nota
+de alteração: mudanças de título precisam de revisão para mesclar identidades.
+PCDT principal e anexos explícitos integram a versão; portarias e resumos ficam
+somente no texto de metadados. Itens sem link tornam-se candidatos para revisão.
+HTTP fixa o IP público validado, mantém TLS/SNI original, valida cada redirect,
+respeita robots e limita tamanho/tentativas. 18 testes de parser/HTTP passaram.
+
+## Etapa 2
+
+Storage atômico por SHA-256, extração PDF por página, HTML explicitamente marcado,
+normalização Unicode/espaços e composição de múltiplos documentos implementados.
+Originais são persistidos antes da extração; páginas brutas e versões dos parsers
+ficam auditáveis. Observações de metadados e artefatos não geram versões falsas.
+Uma reversão de conteúdo aponta para a versão histórica existente e fica registrada
+no resultado do job. Atualização da versão corrente é transacional.
+
+## Etapas 3 e 4
+
+API restrita, dispatcher Beat, filas discovery/ingestion, jobs duráveis, leases
+com token, publicação após commit e reconciliador implementados. Claims duplicados
+são ignorados. Workers antigos não persistem após perder a posse. Retry-After e
+backoff ficam em available_at; falhas permanentes exigem reprocessamento explícito.
+
+Um segundo scraper existe apenas nos testes de contrato: detalhe → intermediário
+→ PDF. Ele é registrado no mesmo registry e usa detector/versionador sem alterações.
+O limite por domínio é compartilhado via Redis; smoke limitado pode usar
+espaçamento local com um processo. Concurrency inicial dos workers é 1.
+
+Logs JSON registram IDs, estágio, resultados, duração, páginas e tamanhos. Mudanças
+na contagem do catálogo produzem catalog_count_changed. /api/metrics expõe backlog,
+falhas por estágio, artefatos/versões e último sucesso por fonte. Readiness depende
+de banco, schema, Redis e storage; não consulta fontes remotas.
+
+Validação manual inclui lint, formatação, mypy, migração/rollback, testes em
+PostgreSQL e teste opcional de entrega Celery com Redis. Consultar validation.md
+para distinguir verificações executadas daquelas que ainda exigem Docker/Redis local.
+
+## Cadastro automático e comandos locais
+
+O processo migrate executa `python -m medguide.bootstrap`: primeiro aplica Alembic,
+depois insere fontes padrão ausentes. O Compose só inicia API, Beat e workers após
+essa etapa terminar. A CONITEC é habilitada e fica vencida para descoberta apenas
+no primeiro cadastro; reinícios preservam enabled, intervalos e next_due_at.
+
+SOURCE_DEFINITIONS centraliza código, nome, URL aprovada, factory e habilitação
+inicial; SCRAPER_REGISTRY é derivado desse catálogo. A API usa a mesma definição.
+Bootstrap não acessa a fonte remota nem publica tarefas.
+
+`python -m medguide sources` oferece list, bootstrap, run, status, enable e disable
+por código, com saída legível ou --json. O serviço usa o mesmo repositório de
+reserva transacional e publicação dos workers. Requisições concorrentes reutilizam
+o run ativo; o cadastro concorrente respeita a unicidade de sources.code.
+
+Status separa descoberta de contagens históricas de jobs por fonte. A CLI usa
+acesso local ao banco no container e não exige token HTTP. A autenticação da API
+é preservada. Não há alterações no schema nem no pipeline de extração/versionamento.

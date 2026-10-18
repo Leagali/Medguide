@@ -1,0 +1,14 @@
+.git
+.venv
+node_modules
+dist
+data
+test-results
+.env
+.env.*
+!.env.example
+docs/MedGuide_Especificacao_Tecnica_Arquitetura_v1.md
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache

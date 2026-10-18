@@ -1,0 +1,87 @@
+x-app: &app
+  build: .
+  image: medguide-local
+  env_file: .env
+  volumes:
+    - raw_documents:/data/raw
+    - ./src/medguide:/app/src/medguide
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks: [backend, egress]
+  restart: 'no'
+  init: true
+  security_opt: [no-new-privileges:true]
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Configure POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Configure POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD in .env}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    networks: [backend]
+    restart: 'no'
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes: [redis_data:/data]
+    networks: [backend]
+    restart: 'no'
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  migrate:
+    <<: *app
+    command: [python, -m, medguide.bootstrap]
+    restart: 'no'
+  api:
+    <<: *app
+    command: [uvicorn, medguide.api.app:app, --host, 0.0.0.0, --port, '8000', --reload]
+    ports: [127.0.0.1:8000:8000]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  beat:
+    <<: *app
+    command: [celery, -A, medguide.workers.celery_app:app, beat, --loglevel=INFO, --schedule=/tmp/celerybeat-schedule]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  worker-discovery:
+    <<: *app
+    command: [celery, -A, medguide.workers.celery_app:app, worker, -Q, discovery, --concurrency=1, --loglevel=INFO, --hostname=discovery@%h]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  worker-ingestion:
+    <<: *app
+    command: [celery, -A, medguide.workers.celery_app:app, worker, -Q, ingestion, --concurrency=1, --loglevel=INFO, --hostname=ingestion@%h]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+volumes:
+  postgres_data:
+  redis_data:
+  raw_documents:
+networks:
+  backend:
+    internal: true
+  egress:

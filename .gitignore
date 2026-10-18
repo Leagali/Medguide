@@ -26,3 +26,18 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Local reference specification (kept for implementation, never published)
+/docs/MedGuide_Especificacao_Tecnica_Arquitetura_v1.md
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+/data/
+/test-results/
+celerybeat-schedule*
