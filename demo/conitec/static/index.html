@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Demonstração visual da coleta CONITEC, exclusiva para o vídeo do MedGuide.">
+  <title>MedGuide · Demonstração CONITEC</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="video-notice"><span class="notice-dot"></span><strong>DEMONSTRAÇÃO PARA O VÍDEO</strong><span>Esta visão não representa a interface final do MedGuide.</span></div>
+  <aside class="sidebar">
+    <a href="/" class="brand" aria-label="MedGuide início"><span class="brand-mark">✚</span><span>MED<span class="brand-accent">GUIDE</span><small>DIRETRIZES · FONTE OFICIAL</small></span></a>
+    <div class="sidebar-label">DEMONSTRAÇÃO DO PROJETO</div>
+    <button class="nav-item active" id="archiveNav"><span class="nav-icon">▤</span>Acervo CONITEC<span class="nav-dot"></span></button>
+    <button class="nav-item" id="aboutButton"><span class="nav-icon">↗</span>Como funciona</button>
+    <div class="sidebar-source"><span class="eyebrow">FONTE MONITORADA</span><strong>CONITEC</strong><p>Protocolos Clínicos e Diretrizes Terapêuticas</p><a href="https://www.gov.br/conitec/pt-br/assuntos/avaliacao-de-tecnologias-em-saude/protocolos-clinicos-e-diretrizes-terapeuticas/pcdt" target="_blank" rel="noopener noreferrer">Visitar catálogo oficial ↗</a></div>
+    <div class="sidebar-footer"><span class="small-dot"></span>Apresentação local<small>Coleta, extração e rastreabilidade.</small></div>
+  </aside>
+
+  <main>
+    <header class="topbar"><span>MedGuide <span class="breadcrumb">/ Coleta e extração</span></span><div class="connection" id="connection"><span class="small-dot"></span>Conectando ao acervo…</div></header>
+    <section class="heading">
+      <div><div class="eyebrow">DA FONTE OFICIAL AO CONTEÚDO CONSULTÁVEL</div><h1>Diretrizes, com origem e história.</h1><p>Explore o resultado real da coleta e da extração de documentos da CONITEC.</p></div>
+      <div class="heading-actions"><button class="button secondary" id="refreshButton">↻ Atualizar</button><button class="button primary" id="discoverButton" disabled>↗ Verificar CONITEC</button></div>
+    </section>
+    <div id="errorBanner" class="error-banner" role="alert" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <section class="stats" aria-label="Resumo do acervo CONITEC">
+      <article class="stat"><div class="stat-label">Diretrizes no acervo<span class="stat-symbol">▤</span></div><strong id="totalCount">—</strong><span>Entradas identificadas na fonte</span></article>
+      <article class="stat"><div class="stat-label">Com texto disponível<span class="stat-symbol teal">✓</span></div><strong id="textCount">—</strong><span>Diretrizes com versão corrente</span></article>
+      <article class="stat"><div class="stat-label">Processamentos ativos<span class="stat-symbol blue">↻</span></div><strong id="pendingCount">—</strong><span>Jobs pendentes ou em execução</span></article>
+      <article class="stat"><div class="stat-label">Jobs para conferir<span class="stat-symbol amber">!</span></div><strong id="reviewCount">—</strong><span>Histórico de falhas e revisões</span></article>
+    </section>
+
+    <section class="run-strip" aria-label="Última verificação do catálogo"><span class="run-icon">↗</span><div><strong id="runTitle">Aguardando conexão com o backend</strong><p id="runDescription">Os números serão exibidos somente após a consulta ao acervo.</p></div><span id="runBadge" class="badge neutral">Sem leitura</span></section>
+
+    <section class="sample-card">
+      <div class="sample-intro"><span class="sample-icon">⌁</span><div><div class="eyebrow">EXTRAÇÃO REAL · AMBIENTE TEMPORÁRIO</div><h2>Veja um documento ser processado.</h2><p id="sampleDescription">Um PDF principal da diretriz selecionada. Este ensaio não altera o acervo PostgreSQL.</p></div></div>
+      <button id="sampleButton" class="button sample-button">Extrair um PDF agora <span>→</span></button>
+      <div id="sampleProgress" class="sample-progress" hidden>
+        <div class="sample-status"><strong id="sampleStage">Consultando a fonte…</strong><span id="sampleBusy" class="spinner" aria-label="Em processamento"></span></div>
+        <ol id="sampleEvents" class="sample-events"></ol>
+        <div class="sample-result"><span id="sampleSummary"></span><button class="button small secondary" id="sampleResultButton" hidden>Ver texto extraído →</button></div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <aside class="library" aria-label="Diretrizes coletadas">
+        <div class="library-header"><div><h2>Acervo de diretrizes</h2><span id="listCount">Aguardando dados</span></div><span class="live-label">DADOS REAIS</span></div>
+        <label class="search-box"><span>⌕</span><input id="search" type="search" placeholder="Buscar diretriz…" aria-label="Buscar diretriz pelo título"></label>
+        <div class="filters" role="group" aria-label="Filtrar diretrizes"><button class="filter active" data-filter="all" aria-pressed="true">Todas</button><button class="filter" data-filter="text" aria-pressed="false">Com texto</button><button class="filter" data-filter="pending" aria-pressed="false">Em andamento</button><button class="filter" data-filter="review" aria-pressed="false">Revisão</button></div>
+        <div id="guidelineList" class="guideline-list" aria-live="polite"><div class="empty-list">Conectando ao acervo do MedGuide…</div></div>
+        <div class="library-foot">Textos e originais preservados pelo coletor.</div>
+      </aside>
+
+      <article class="reader" id="reader" aria-label="Conteúdo da diretriz">
+        <div id="readerEmpty" class="reader-empty"><span class="empty-icon">▤</span><h2>O resultado da coleta, aqui.</h2><p>Selecione uma diretriz para explorar seu texto por página, consultar a versão e abrir o original.</p><span>Sem conteúdo fictício ou progresso simulado.</span></div>
+        <div id="readerLoading" class="reader-loading" hidden><span class="spinner"></span>Consultando texto e originais da versão…</div>
+        <div id="readerContent" hidden>
+          <header class="reader-header"><div class="reader-labels"><span class="badge teal" id="scopeBadge">ACERVO REAL</span><span class="reader-reference">CONITEC · PCDT</span><button id="backToArchive" class="text-button" hidden>← Voltar ao acervo</button></div><h2 id="readerTitle"></h2><div class="reader-meta"><span id="pageCount"></span><span id="characterCount"></span><span id="versionDate"></span></div><div class="reader-actions"><label id="versionLabel" class="select-label">Versão<select id="versionSelect" aria-label="Selecionar versão observada"></select></label><button class="button small secondary" id="pdfButton">Abrir PDF original ↗</button><button class="button small secondary" id="downloadButton">↓ Baixar texto</button></div><div id="temporaryNote" class="temporary-note" hidden>Resultado de ensaio isolado. Não foi inserido no acervo nem executado pelas filas da aplicação. Os arquivos serão removidos ao encerrar o demonstrador.</div></header>
+          <div class="reader-toolbar"><div class="tabs" role="group" aria-label="Formato da leitura"><button class="tab active" id="pagesTab" aria-pressed="true">Texto por página</button><button class="tab" id="fullTab" aria-pressed="false">Texto completo</button></div><div class="font-controls"><button id="smallerFont" aria-label="Diminuir fonte">A−</button><button id="largerFont" aria-label="Aumentar fonte">A+</button></div></div>
+          <div class="document-line"><label id="documentLabel">Documento<select id="documentSelect" aria-label="Selecionar documento da versão"></select></label><div id="pagination" class="pagination"><button id="previousPage" aria-label="Página anterior">‹</button><label>Página <input id="pageInput" type="number" min="1" value="1" aria-label="Número da página"></label><span id="pageTotal"></span><button id="nextPage" aria-label="Próxima página">›</button></div></div>
+          <div class="page-caption"><span id="pageCaption">TEXTO EXTRAÍDO DO DOCUMENTO</span><button id="copyButton" class="text-button">Copiar trecho</button></div>
+          <div class="reading-area" id="readingArea"><pre id="pageText" tabindex="0"></pre></div>
+          <details class="provenance"><summary>Origem e integridade do documento <span>＋</span></summary><dl><dt>Origem oficial</dt><dd><a id="sourceLink" target="_blank" rel="noopener noreferrer"></a></dd><dt>Coletado em</dt><dd id="fetchedAt"></dd><dt>SHA-256 do original</dt><dd id="rawHash"></dd><dt>SHA-256 do texto</dt><dd id="textHash"></dd></dl></details>
+          <footer class="reader-foot">Texto simples pode perder diagramação. Figuras, tabelas e formatação completa permanecem no original.</footer>
+        </div>
+      </article>
+    </section>
+    <footer class="page-footer"><span>MedGuide · Demonstração de coleta, extração e versionamento</span><span id="updatedAt">Sem leitura do acervo nesta sessão</span></footer>
+  </main>
+  <dialog id="aboutDialog"><div class="dialog-header"><span class="eyebrow">O QUE ESTAMOS DEMONSTRANDO</span><button id="closeAbout" class="icon-button" aria-label="Fechar">×</button></div><h2>Da CONITEC ao texto consultável.</h2><ol class="explanation"><li><strong>Consultar a fonte</strong><p>O coletor reconhece as entradas e os links do catálogo oficial.</p></li><li><strong>Preservar e extrair</strong><p>Os workers recuperam o original e extraem seu texto por página.</p></li><li><strong>Registrar o que foi observado</strong><p>Conteúdo inédito gera uma versão; conteúdo já conhecido não duplica o histórico.</p></li><li><strong>Conferir o resultado</strong><p>Texto, PDF, origem e versão permanecem rastreáveis.</p></li></ol><p class="dialog-note">Esta página é exclusiva para o vídeo. O ensaio de um PDF usa SQLite e armazenamento temporários, separados do PostgreSQL e das filas. Não há OCR ou resumo por IA.</p></dialog>
+</body>
+</html>
