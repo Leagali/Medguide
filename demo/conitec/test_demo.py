@@ -6,6 +6,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from demo.conitec.app import Backend, create_app
+from demo.conitec.video_scheduler import recovery_schedule
 
 
 def setup_demo():
@@ -166,3 +167,42 @@ def test_pagination_reads_beyond_first_200_records():
 
     asyncio.run(check())
     assert offsets == [0, 200]
+
+
+def test_isolated_empty_archive_only_requests_discovery_after_explicit_post(monkeypatch):
+    monkeypatch.setenv("MEDGUIDE_DEMO_ISOLATED", "1")
+    source_id = str(uuid4())
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/api/sources":
+            return httpx.Response(
+                200, json=[{"id": source_id, "code": "conitec_pcdt", "enabled": True}]
+            )
+        if request.url.path.endswith("/discover"):
+            return httpx.Response(202, json={"run_id": str(uuid4()), "published": True})
+        return httpx.Response(200, json=[])
+
+    backend = Backend(
+        httpx.AsyncClient(base_url="http://api", transport=httpx.MockTransport(handler))
+    )
+    with TestClient(create_app(backend), base_url="http://localhost") as client:
+        snapshot = client.get("/demo-api/state").json()
+        assert snapshot["isolated"] is True
+        assert snapshot["guidelines"] == [] and snapshot["latest_run"] is None
+        assert snapshot["counts"] == {"guidelines": 0, "with_text": 0, "pending": 0, "review": 0}
+        assert all(method == "GET" for method, _ in calls)
+        response = client.post("/demo-api/discover", headers={"X-MedGuide-Demo": "1"})
+        assert response.status_code == 202 and response.json()["published"] is True
+        assert calls[-1] == ("POST", f"/api/sources/{source_id}/discover")
+
+
+def test_video_scheduler_keeps_retries_without_automatic_catalog_discovery():
+    original = {
+        "due-sources": {"task": "medguide.dispatch_due_sources", "schedule": 60},
+        "recover-pending": {"task": "medguide.reconcile", "schedule": 60},
+    }
+    selected = recovery_schedule(original)
+    assert selected == {"recover-pending": original["recover-pending"]}
+    assert "due-sources" in original

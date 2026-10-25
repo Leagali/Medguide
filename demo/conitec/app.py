@@ -242,6 +242,7 @@ def create_app(
             )
         counts = Counter(j["status"] for j in relevant)
         return {
+            "isolated": os.getenv("MEDGUIDE_DEMO_ISOLATED") == "1",
             "source": source,
             "guidelines": guidelines,
             "latest_run": runs[0] if runs else None,

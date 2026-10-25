@@ -3,8 +3,10 @@
 const $ = (id) => document.getElementById(id);
 const number = (value) => new Intl.NumberFormat("pt-BR").format(value);
 const labels = {PENDING:"Pendente",PROCESSING:"Em processamento",COMPLETED:"Concluído",FAILED:"Falha",NEEDS_REVIEW:"Para revisão"};
+const jobStages = {FETCH:"Baixando original",PERSIST:"Salvando conteúdo",EXTRACT:"Extraindo texto",NORMALIZE:"Conferindo conteúdo"};
 let snapshot = null, selectedId = null, detail = null, filter = "all", pageIndex = 0, documentIndex = 0;
 let readingMode = "pages", refreshBusy = false, ticket = 0, sampleId = null, sampleRunning = false, fontSize = 16;
+let discoveryBusy = false;
 
 function date(value) {
   if (!value) return "Não informado";
@@ -47,7 +49,7 @@ function renderList() {
   });
   text("listCount", `${number(visible.length)} de ${number(snapshot.guidelines.length)} diretrizes`);
   const list = $("guidelineList"); list.replaceChildren();
-  if (!visible.length) { list.append(node("div", "empty-list", "Nenhuma diretriz corresponde a esta busca.")); return; }
+  if (!visible.length) { list.append(node("div", "empty-list", snapshot.guidelines.length ? "Nenhuma diretriz corresponde a esta busca." : "Nenhum documento coletado nesta sessão. Clique em Começar coleta CONITEC.")); return; }
   visible.forEach(item => {
     const button = node("button", "guideline-item" + (item.id === selectedId ? " selected" : ""));
     button.type = "button"; button.setAttribute("aria-pressed", String(item.id === selectedId));
@@ -55,11 +57,33 @@ function renderList() {
     const content = node("span", "row-content"); content.append(node("strong", "", item.title));
     const pending = ["PENDING","PROCESSING"].includes(item.job?.status);
     const review = ["FAILED","NEEDS_REVIEW"].includes(item.job?.status);
-    const caption = pending ? labels[item.job.status] : review ? "Último job requer conferência" : item.current_version_id ? "Texto disponível" : "Aguardando extração";
+    const caption = pending ? (item.job.status === "PROCESSING" ? jobStages[item.job.stage] || labels[item.job.status] : "Na fila de download") : review ? "Último job requer conferência" : item.current_version_id ? "Texto disponível" : "Aguardando extração";
     const subtitle = node("span", "row-subtitle " + (pending ? "pending" : review ? "review" : item.current_version_id ? "available" : ""));
     subtitle.append(node("span", "small-dot"), document.createTextNode(caption)); content.append(subtitle); button.append(content);
     button.addEventListener("click", () => loadGuideline(item.id)); list.append(button);
   });
+}
+
+function renderCollection() {
+  const run = snapshot.latest_run, c = snapshot.counts;
+  const discovering = run && ["PENDING", "PROCESSING"].includes(run.status);
+  text("discoverButton", !run && !c.guidelines ? "↓ Começar coleta CONITEC" : discovering ? "Consultando CONITEC…" : c.pending ? "Coleta em andamento…" : "↗ Verificar CONITEC novamente");
+  $("discoverButton").disabled = discoveryBusy || !snapshot.source.enabled || discovering || c.pending > 0;
+  $("sampleCard").hidden = snapshot.isolated;
+  text("collectionTitle", discovering ? "Consultando o catálogo oficial…" : c.pending ? "Os workers estão baixando e extraindo." : c.with_text ? "Resultados disponíveis para conferir." : "Comece a coleta pela fonte oficial.");
+  text("collectionDescription", snapshot.isolated ? "Sessão isolada: API, Celery, PostgreSQL e PDFs próprios. O acervo anterior está preservado." : "Coleta real no acervo conectado. Acompanhe os dados registrados pelos workers.");
+  text("collectionNote", run?.status === "FAILED" ? "A descoberta falhou. Confira a mensagem acima e solicite uma nova verificação." : `${number(c.with_text)} diretrizes com texto · ${number(c.pending)} jobs ativos · ${number(c.review)} falhas/revisões no histórico. O catálogo completo pode levar vários minutos; abra os primeiros resultados assim que ficarem prontos.`);
+  const active = snapshot.guidelines.filter(g => g.job?.status === "PROCESSING");
+  const list = $("activeJobs"); list.replaceChildren();
+  active.forEach(g => {
+    const row = node("div", "active-job");
+    row.append(node("span", "spinner"), node("strong", "", g.title), node("span", "", jobStages[g.job.stage] || g.job.stage || "Processando")); list.append(row);
+  });
+  const steps = $("collectionSteps").children;
+  steps[0].classList.toggle("done", run?.status === "COMPLETED");
+  steps[0].classList.toggle("running", Boolean(discovering));
+  steps[1].classList.toggle("running", c.pending > 0);
+  steps[2].classList.toggle("done", c.with_text > 0);
 }
 
 async function refresh(reloadReader = false) {
@@ -73,14 +97,14 @@ async function refresh(reloadReader = false) {
     const c = snapshot.counts;
     text("totalCount", number(c.guidelines)); text("textCount", number(c.with_text));
     text("pendingCount", number(c.pending)); text("reviewCount", number(c.review));
-    $("discoverButton").disabled = !snapshot.source.enabled;
     $("discoverButton").title = snapshot.source.enabled ? "Solicitar descoberta na fonte real" : "Fonte desabilitada. Habilite pela CLI antes de verificar.";
     text("updatedAt", `Painel atualizado em ${date(snapshot.checked_at)}`);
     const run = snapshot.latest_run;
     text("runBadge", run ? (labels[run.status] || run.status) : "Sem execução");
     $("runBadge").className = "badge " + (!run ? "neutral" : run.status === "COMPLETED" ? "teal" : run.status === "FAILED" ? "red" : "blue");
     text("runTitle", !run ? "Nenhuma descoberta registrada" : run.status === "COMPLETED" ? "Última verificação do catálogo concluída" : run.status === "FAILED" ? "A última verificação requer atenção" : "Verificação do catálogo em andamento");
-    text("runDescription", !run ? "Use Verificar CONITEC para solicitar uma execução." : run.status === "COMPLETED" ? `${number(run.found_count)} itens encontrados · ${number(run.queued_count)} novos jobs · ${date(run.finished_at)}` : run.status === "FAILED" ? (run.error_summary || "Confira os logs do worker de descoberta.") : `Solicitada em ${date(run.started_at)}. Downloads e extração seguem nos workers.`);
+    text("runDescription", !run ? "Nenhum download foi iniciado. Clique em Começar coleta CONITEC." : run.status === "COMPLETED" ? `${number(run.found_count)} itens encontrados · ${number(run.queued_count)} novos jobs · ${date(run.finished_at)}` : run.status === "FAILED" ? (run.error_summary || "Confira os logs do worker de descoberta.") : `Solicitada em ${date(run.started_at)}. Downloads e extração seguem nos workers.`);
+    renderCollection();
     renderList();
     if (!selectedId && snapshot.guidelines.length) {
       const first = snapshot.guidelines.find(g => g.external_key.startsWith("acidentes-escorpionicos") && g.current_version_id) || snapshot.guidelines.find(g => g.current_version_id) || snapshot.guidelines[0];
@@ -88,7 +112,7 @@ async function refresh(reloadReader = false) {
     } else if (selectedId && detail?.scope === "archive") {
       const before = previous?.guidelines.find(g => g.id === selectedId);
       const after = snapshot.guidelines.find(g => g.id === selectedId);
-      if (reloadReader || (before?.current_version_id !== after?.current_version_id && detail.version?.id === before?.current_version_id)) {
+      if (reloadReader || (before?.current_version_id !== after?.current_version_id && (detail.version?.id ?? null) === before?.current_version_id)) {
         await loadGuideline(selectedId, reloadReader ? detail.version?.id : null);
       }
     }
@@ -97,7 +121,7 @@ async function refresh(reloadReader = false) {
     $("connection").className = "connection offline";
     $("connection").replaceChildren(node("span", "small-dot"), document.createTextNode(snapshot ? "Leitura desatualizada" : "Acervo indisponível"));
     $("discoverButton").disabled = true;
-    if (!snapshot) text("runDescription", "Inicie o backend com docker compose up -d. O ensaio temporário também precisa do Redis.");
+    if (!snapshot) text("runDescription", "Inicie a demonstração com bash demo/conitec/run.sh e mantenha o terminal aberto.");
   } finally { refreshBusy = false; $("refreshButton").disabled = false; }
 }
 
@@ -165,6 +189,9 @@ function renderText() {
   const url = doc?.source_url;
   $("sourceLink").removeAttribute("href"); text("sourceLink", url || "Não disponível");
   if (url) { try { if (new URL(url).protocol === "https:") $("sourceLink").href = url; } catch { /* Preserve only text. */ } }
+  const official = $("officialButton"); official.removeAttribute("href"); official.hidden = true;
+  const officialURL = url || detail.guideline.catalog_url;
+  if (officialURL) { try { if (new URL(officialURL).protocol === "https:") { official.href = officialURL; official.hidden = false; } } catch { /* Invalid source is not navigable. */ } }
   text("fetchedAt", date(doc?.fetched_at)); text("rawHash", doc?.raw_sha256 || "Não disponível"); text("textHash", doc?.content_sha256 || "Não disponível");
 }
 
@@ -198,13 +225,14 @@ async function pollSample() {
 
 $("refreshButton").addEventListener("click", () => refresh(true));
 $("discoverButton").addEventListener("click", async () => {
+  discoveryBusy = true;
   $("discoverButton").disabled = true;
   try {
     const result = await request("/demo-api/discover", {method:"POST"});
-    toast(result.published ? "Verificação solicitada. Acompanhe o catálogo e os processamentos reais." : "Solicitação salva no banco. Publicação pendente para reconciliação.");
+    toast(result.published ? "Job solicitado pela API. O catálogo, os PDFs e os textos serão coletados da CONITEC." : "Solicitação salva no banco. Publicação pendente para reconciliação.");
     await refresh();
   } catch (exc) { error(exc.message); }
-  finally { $("discoverButton").disabled = !snapshot?.source.enabled; }
+  finally { discoveryBusy = false; if (snapshot) renderCollection(); }
 });
 $("search").addEventListener("input", renderList);
 document.querySelectorAll("[data-filter]").forEach(button => button.addEventListener("click", () => {

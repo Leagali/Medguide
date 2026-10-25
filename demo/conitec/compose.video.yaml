@@ -1,0 +1,47 @@
+# Complemento usado somente pelo run.sh, sempre com projeto medguide-video-*.
+x-video-environment: &video-environment
+  MEDGUIDE_DATABASE_URL: postgresql+psycopg://medguide_video:video_local@postgres:5432/medguide_video
+  MEDGUIDE_REDIS_URL: redis://redis:6379/0
+  MEDGUIDE_STORAGE_ROOT: /data/raw
+  MEDGUIDE_ADMIN_TOKEN: medguide-video-local
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: medguide_video
+      POSTGRES_USER: medguide_video
+      POSTGRES_PASSWORD: video_local
+  migrate:
+    environment: *video-environment
+  api:
+    environment: *video-environment
+    ports: !reset []
+  worker-discovery:
+    environment: *video-environment
+  worker-ingestion:
+    environment: *video-environment
+  beat:
+    environment: *video-environment
+    volumes:
+      - ./demo/conitec:/demo:ro
+    command: [python, /demo/video_scheduler.py]
+  demo:
+    build: .
+    image: medguide-local
+    env_file: .env
+    environment:
+      <<: *video-environment
+      MEDGUIDE_DEMO_API_URL: http://api:8000
+      MEDGUIDE_DEMO_ISOLATED: '1'
+    command: [uvicorn, app:app, --app-dir, /demo, --host, 0.0.0.0, --port, '8001']
+    volumes:
+      - raw_documents:/data/raw
+      - ./src/medguide:/app/src/medguide
+      - ./demo/conitec:/demo:ro
+    ports: [127.0.0.1:8001:8001]
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [backend, egress]
+    restart: 'no'
+    init: true
+    security_opt: [no-new-privileges:true]

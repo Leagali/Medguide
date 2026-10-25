@@ -1,113 +1,166 @@
 # Interface exclusiva para o vídeo — CONITEC
 
-Esta pasta contém uma demonstração visual descartável, na branch `demo/video-conitec`.
-Não representa o frontend final do MedGuide. Os arquivos existentes da aplicação,
-dependências e Compose foram preservados. Não há dados fictícios nem animação de
-progresso simulada.
+Esta pasta contém a demonstração visual da branch `demo/video-conitec`. A página
+exibe **DEMONSTRAÇÃO PARA O VÍDEO** e não representa a interface final do MedGuide.
+Os arquivos do núcleo, suas dependências e o Compose principal foram preservados.
 
 ## Abrir no Ubuntu/WSL
 
-Com Docker/Compose disponível, dentro da pasta do projeto:
+Dentro do projeto, com Docker e Docker Compose disponíveis:
 
 ```bash
 bash demo/conitec/run.sh
 ```
 
-O comando prepara `.env` a partir do exemplo apenas se ele não existir, inicia os
-serviços existentes e abre um container separado para a demonstração. Aguarde a API
-do acervo inicializar; a página tenta se reconectar automaticamente.
+Abra **http://127.0.0.1:8001** no navegador do Windows e mantenha o terminal aberto.
+O comando cria o projeto Docker **`medguide-video-local`**, com PostgreSQL, Redis,
+armazenamento de PDFs, API e workers próprios. A primeira abertura dessa sessão
+começa com **zero diretrizes**. O acervo do projeto `medguide` permanece separado.
 
-Abra **http://127.0.0.1:8001** no navegador do Windows. Mantenha o terminal aberto.
-O código da demonstração é montado somente para leitura em `/demo`; nenhum serviço
-foi adicionado ao `compose.yaml`.
+O token local da demonstração fica no servidor; não precisa ser digitado no
+navegador. O Compose complementar fixa a conexão no PostgreSQL da sessão, mesmo
+que o `.env` original aponte para outro banco. A API interna não publica a porta
+8000; somente a interface é exposta em `127.0.0.1:8001`.
 
-Se já houver uma instância, pare-a no terminal onde foi iniciada ou use
-`docker stop medguide-video-demo` antes de iniciar novamente. Não execute dois
-demonstradores na mesma porta.
+O launcher prepara `.env` a partir do exemplo somente se ele não existir. Na
+primeira execução, o Docker pode precisar construir a imagem da aplicação.
 
-O token administrativo é lido pelo servidor, do ambiente já configurado no Compose.
-Não é necessário digitá-lo na página. Se o `.env` antigo não tiver
-`MEDGUIDE_ADMIN_TOKEN`, configure-o antes de iniciar o demonstrador e recrie os
-serviços com `docker compose up -d`.
+### Se a versão anterior da interface estiver aberta
 
-## Roteiro sugerido para a gravação
+Encerre-a com Ctrl+C no terminal antigo. Se foi iniciada pelo launcher anterior:
 
-1. Mostre o aviso **DEMONSTRAÇÃO PARA O VÍDEO**, o resumo do acervo e a origem CONITEC.
-2. Clique em **Verificar CONITEC**. A solicitação usa a API real e o processamento
-   ocorre nos workers existentes. Se nenhum documento estiver elegível, o resultado
-   pode ser “0 novos jobs”. Fonte desabilitada precisa ser habilitada pela CLI.
-3. Selecione uma diretriz, use a busca e avance para uma página interna, como a 6.
-4. Abra **PDF original** e compare o mesmo trecho. O PDF é o vinculado à versão
-   selecionada, não simplesmente o último arquivo baixado daquela diretriz.
-5. Mostre a versão observada, data, fonte e **Baixar texto**. Se houver uma única
-   versão, isso é esperado: o coletor ainda não observou outro conteúdo.
-6. Para mostrar uma extração nova, clique em **Extrair um PDF agora**. O ensaio usa
-   o documento principal da diretriz selecionada, consultando o catálogo oficial.
-7. Acompanhe os eventos reportados pelo serviço e clique em **Ver texto extraído**.
-   O leitor passa a exibir o selo **ENSAIO TEMPORÁRIO**. Use **Voltar ao acervo**
-   para retornar aos dados persistentes.
+```bash
+docker stop medguide-video-demo
+```
 
-O link **Como funciona** explica a sequência em linguagem de apresentação. Amplie a
-fonte do leitor com A+ para facilitar a gravação. A interface funciona sem CDN,
-fontes remotas ou instalação npm adicional.
+Esse comando para apenas o demonstrador antigo, liberando a porta 8001. Não
+execute duas sessões de vídeo simultaneamente na mesma porta.
 
-## O que é real e onde fica
+## Gravar a demonstração
 
-| Área | Origem | Efeito |
-|---|---|---|
-| Resumo e lista | API existente, apenas CONITEC | Consultas paginadas, atualizadas a cada 5 s enquanto a aba está visível. |
-| Verificar CONITEC | `POST /api/sources/{id}/discover` | Pode criar um run e jobs reais, preservando as regras atuais. |
-| Texto e versões | API administrativa | Leitura do conteúdo persistido. |
-| Relação versão/PDF | `SELECT` em `version_artifacts` e API RAW | Consulta de leitura para evitar misturar originais de versões diferentes. |
-| Extrair um PDF | Scraper e `IngestionService` existentes | Um documento principal, SQLite e RAW temporários; sem filas e sem gravar no PostgreSQL. |
+1. Mostre o aviso de demonstração e a lista vazia. Explique que o coletor consulta
+   uma fonte oficial e transforma os documentos em textos consultáveis.
+2. Clique em **Começar coleta CONITEC**. A página chama a API existente, que
+   registra a execução e publica a tarefa real na fila Celery.
+3. Acompanhe o catálogo e os **jobs ativos**. Após a descoberta, as diretrizes
+   aparecem na lista, ainda aguardando download. Os workers baixam os originais,
+   extraem o texto e registram as versões no PostgreSQL da demonstração.
+4. Quando **Com texto disponível** aumentar, selecione uma diretriz pronta. Use
+   **Com texto** para encontrar os resultados já concluídos. Um documento aberto
+   antes da conclusão passa a exibir o resultado automaticamente após a coleta.
+5. Avance para uma página interna, por exemplo a 6. Mostre **Texto completo**,
+   **Baixar texto**, a versão observada e a data da coleta.
+6. Clique em **Abrir PDF original** para abrir a cópia preservada daquela versão.
+7. Clique em **Ver na fonte oficial** para abrir o endereço HTTPS do documento
+   publicado pela CONITEC. Antes de existir um PDF coletado, o botão pode apontar
+   para a página oficial da diretriz. A barra lateral também abre o catálogo.
 
-As contagens de jobs para conferência são históricas; podem incluir uma tentativa
-antiga com falha mesmo quando outra tentativa concluiu. O filtro de revisão da lista
-considera somente o último job de cada diretriz. O total “com texto” conta diretrizes
-com versão corrente, não o número de todas as versões históricas.
+A descoberta pode terminar antes dos downloads: **catálogo concluído não significa
+que todos os PDFs já foram extraídos**. A página acompanha esses estados separados,
+consultando a API a cada 5 segundos enquanto a aba está visível.
 
-O ensaio é limitado a uma execução por vez, seis por sessão e três minutos por
-execução. Os eventos são emitidos durante chamadas reais do pipeline, sem porcentagem
-de páginas supostamente processadas. Pode aparecer mais de um evento de persistência:
-originais e resultado final são salvos em momentos diferentes.
+A coleta do catálogo completo pode ultrapassar os cinco minutos do vídeo. Grave a
+partida vazia e mostre os primeiros resultados prontos; se necessário, corte a
+espera e informe isso durante a apresentação. Não há tempo ou porcentagem simulados.
+Limites, indisponibilidade da fonte e documentos sem texto extraível podem produzir
+falhas reais, exibidas para conferência. Não há OCR ou resumo por IA.
 
-PDF, texto e banco temporários ficam em um diretório `medguide-video-*` em `/tmp`
-do container e são removidos ao encerrar o demonstrador. Reiniciar a página não
-transforma o ensaio em uma coleta permanente. Se a referência principal não for PDF,
-o ensaio mostra a falha em vez de apresentar um resultado falso.
+**Verificar CONITEC novamente** fica disponível quando a coleta deixa de ter jobs
+ativos. Uma nova verificação respeita as regras existentes de rechecagem e
+idempotência: documentos já conhecidos podem não gerar novos downloads ou versões.
 
-Ao iniciar o acervo, o Beat pode executar fontes vencidas normalmente. O demonstrador
-nunca limpa dados, modifica intervalos, habilita fontes ou cria versões artificiais.
-OCR, resumo por IA e um histórico anterior às coletas observadas não fazem parte
-desta demonstração.
+## Gravar novamente começando do zero
 
-## Encerrar
+Ctrl+C encerra os serviços dessa demonstração, preservando os volumes. Reabrir com
+o mesmo nome continua a sessão existente. Para outra gravação, encerre a anterior
+e escolha um nome ainda não utilizado:
 
-No terminal da demonstração, pressione Ctrl+C. Para encerrar também os serviços do
-acervo, use `docker compose down`; os volumes persistentes são preservados.
+```bash
+bash demo/conitec/run.sh gravacao-2
+```
 
-## Validação local do adaptador
+Isso cria o projeto `medguide-video-gravacao-2`, com banco, fila e arquivos vazios,
+sem apagar a sessão anterior nem o acervo principal. Não é necessário limpar tabelas
+ou remover volumes. Cada nome cria dados persistentes próprios e ocupa espaço local.
 
-Usando o ambiente de desenvolvimento do projeto:
+## Ver os logs e os serviços
+
+Em outro terminal, para a sessão padrão:
+
+```bash
+docker compose --project-name medguide-video-local -f compose.yaml -f demo/conitec/compose.video.yaml ps -a
+
+docker compose --project-name medguide-video-local -f compose.yaml -f demo/conitec/compose.video.yaml logs --tail 80 worker-discovery worker-ingestion beat demo
+```
+
+Troque `medguide-video-local` pelo nome exibido pelo launcher se usar outra sessão.
+O serviço `migrate` terminar com código 0 é esperado. O Beat da demonstração usa
+`video_scheduler.py`: recupera publicações pendentes e novas tentativas pelo mesmo
+mecanismo do núcleo, mas **não agenda a descoberta automática de fontes**. A primeira
+coleta depende do clique na página. Jobs já solicitados podem continuar ao reabrir
+uma sessão existente.
+
+Para encerrar a sessão padrão por outro terminal, preservando os dados:
+
+```bash
+docker compose --project-name medguide-video-local -f compose.yaml -f demo/conitec/compose.video.yaml down
+```
+
+## Origem dos dados e limites
+
+| Área | Implementação |
+|---|---|
+| Início vazio | Volumes próprios do projeto Docker `medguide-video-*`; nenhum documento é apagado ou escondido. |
+| Botão de coleta | `POST /api/sources/{id}/discover`, API e workers existentes. |
+| Downloads e extração | Scraper CONITEC e `IngestionService` reais, usando PostgreSQL, Redis e RAW da sessão. |
+| Etapas e contagens | Estados registrados pelos jobs; sem progresso artificial. |
+| Texto e versões | API administrativa existente. |
+| Relação versão/PDF | `SELECT` somente de leitura em `version_artifacts`, seguido da API RAW. |
+| PDF preservado | Original vinculado à versão selecionada, inclusive após reversão de conteúdo. |
+| Fonte oficial | `source_url` do documento ou `catalog_url` da diretriz, em HTTPS. |
+
+As contagens de falhas/revisões são históricas; uma tentativa antiga pode ter falhado
+antes de uma nova concluir. O filtro da lista considera o último job de cada diretriz.
+O total **com texto** conta diretrizes com versão corrente, não todas as versões.
+
+O ensaio avulso de um PDF, da implementação anterior, continua disponível para quem
+executar o adaptador fora do modo isolado. Seu painel fica oculto neste launcher,
+pois o foco do vídeo é o job real pelas filas. Esse ensaio usa SQLite e RAW em `/tmp`
+do container, limitado a uma execução por vez, seis por sessão e três minutos por
+execução; não grava no PostgreSQL. Seus resultados são identificados como temporários.
+
+## Validação do adaptador
+
+No ambiente de desenvolvimento:
 
 ```bash
 uv run python -m pytest demo/conitec/test_demo.py
 ```
 
-Os testes usam uma API HTTP controlada e vínculos de versão em memória. Nenhuma
-consulta do teste usa o banco de coletas nem acessa a CONITEC. O teste real limitado
-e a inspeção no navegador devem ser distinguidos desses testes de contrato.
+Os testes de contrato usam uma API controlada, sem consultar CONITEC ou o banco do
+acervo. Incluem início vazio sem coleta automática, acionamento explícito pela API,
+agenda exclusiva de recuperação, paginação, origem local das operações e vínculo
+correto entre versão e PDF. A suíte pode emitir o aviso já existente de depreciação
+do TestClient/Starlette.
 
-### Conferência desta implementação — 24/10/2026
+Os testes reais no navegador e os relatórios locais ficam em
+`test-results/demo-ui/`, ignorado pelo Git.
 
-- Cinco testes do adaptador aprovados; Ruff e verificação de sintaxe JavaScript aprovados.
-- Navegador Edge: busca, seleção de diretriz, leitura da página 6, texto completo,
-  download de texto igual ao banco e PDF conferido pelo SHA-256 do artefato.
-- Descoberta solicitada pela página: 132 itens, zero novos jobs nessa execução.
-- Ensaio temporário solicitado pela página: Asma, 57 páginas e 167.126 caracteres;
-  reexecução ignorada e resultado exibido com identificação de ambiente temporário.
-- Layout conferido em desktop e celular, sem rolagem horizontal ou erros JavaScript.
+### Conferência em 25/10/2026
 
-Esses números são resultados da execução, não conteúdo fixo da interface. Capturas
-e relatório locais: `test-results/demo-ui/`, ignorado pelo Git. A suíte pode emitir
-o aviso já existente de depreciação do TestClient/Starlette; os testes passam.
+- Sete testes de contrato aprovados; Ruff e sintaxe JavaScript aprovados.
+- Compose resolvido com volumes próprios, conexão fixada no banco da sessão e
+  porta da API interna sem publicação no host; Docker Compose 5.2.0. O complemento
+  usa a marca `!reset` do Compose para remover a publicação herdada da porta 8000.
+- Navegador: sessão inicialmente vazia, sem execução automática; clique na página
+  iniciou descoberta real de 132 itens e criou 132 jobs.
+- Diretriz selecionada durante o processamento passou a exibir texto sem recarregar
+  a página: Acidentes Escorpiônicos, 50 páginas e 110.609 caracteres.
+- Página 6 e texto completo conferidos; TXT igual ao texto da versão e PDF com
+  SHA-256 igual ao original preservado. Link oficial igual ao endereço coletado.
+- Layout desktop e celular sem rolagem horizontal ou erros JavaScript.
+- Acervo principal manteve as mesmas contagens antes e depois: 132 diretrizes,
+  133 versões, 133 artefatos, 133 jobs e seis execuções de catálogo.
+
+A sessão de teste foi separada da sessão padrão. A validação conferiu os primeiros
+resultados reais; não representa uma auditoria de todos os PDFs do catálogo.
