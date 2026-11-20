@@ -119,3 +119,34 @@ A comparação de hashes comprova integridade e consistência da extração; nã
 uma revisão clínica. Texto simples perde formatação de PDF: gráficos permanecem
 no original e sobrescritos podem aparecer concatenados ao texto. OCR, reconciliação
 de títulos renomeados e uma tela de leitura continuam fora da implementação atual.
+
+## Validação do frontend — 19/11/2026
+
+Ambiente: Windows 11, Node.js 24.22, backend no Ubuntu/WSL pelo Compose, com as 141
+diretrizes da CONITEC processadas (141 jobs concluídos, 141 versões e 141 originais).
+
+- `npm ci`, `npm run build` (com `tsc -b`) e `npm run lint` aprovados, sem avisos.
+- Proxy do Vite: `/api/guidelines`, `/api/metrics` e `/api/artifacts/{id}/raw`
+  (PDF de 2 MB) responderam 200 sem token no navegador. Com a API desligada, o
+  proxy responde 502 e a tela mostra como subir o backend.
+- Classificação por especialidade aplicada às 141 diretrizes: todas receberam ao
+  menos uma especialidade específica. Três falsos positivos foram corrigidos
+  (`citoplasma` → asma, `linfangioleiomiomatose` → leiomioma, cabeça e pescoço →
+  dermatologia).
+- Fluxo completo no Chrome sem interface, controlado por `puppeteer-core`, sem erros
+  de console nem respostas HTTP ≥ 400:
+  - login inválido e validações de cadastro e de sugestão;
+  - cadastro com duas especialidades, que resultou em 21 diretrizes no feed;
+  - busca `hiv` com 9 resultados, filtros e ordenação refletidos na URL, e
+    Cardiologia com 7 diretrizes em “Todas”;
+  - Asma: metadados, busca `corticoide` em 42 páginas, download do original,
+    histórico e rastreabilidade;
+  - nova versão simulada no snapshot local, que gerou a notificação;
+  - sugestão enviada, aprovada pelo administrador e avisada a quem sugeriu;
+  - administração bloqueada para um usuário comum.
+- Nenhuma tela teve rolagem horizontal em 1366 px e em 390 px de largura.
+
+O teste automatizado ficou fora do repositório: o projeto não tem um executor de
+testes de frontend. Ações da administração que alteram a fonte (pausar, alterar
+intervalos e “Descobrir agora”) foram verificadas apenas visualmente, para não
+mudar o agendamento da coleta usada na demonstração.

@@ -1,6 +1,8 @@
 # Arquitetura de ingestão MedGuide
 
-O frontend React existente é independente do monólito modular Python 3.12.
+O frontend React/Vite roda fora do Compose e acessa a API pelo proxy do Vite
+(veja [Frontend](#frontend) e a [ADR 004](decisions/004-frontend.md)). O backend é um
+monólito modular Python 3.12.
 API FastAPI, Beat e dois workers usam a mesma imagem. PostgreSQL é a fonte
 durável; Redis transporta apenas IDs. RAW fica em volume com endereçamento SHA-256.
 O escopo de execução é exclusivamente local, conforme ajuste solicitado pelo usuário.
@@ -89,3 +91,29 @@ o run ativo; o cadastro concorrente respeita a unicidade de sources.code.
 Status separa descoberta de contagens históricas de jobs por fonte. A CLI usa
 acesso local ao banco no container e não exige token HTTP. A autenticação da API
 é preservada. Não há alterações no schema nem no pipeline de extração/versionamento.
+
+## Frontend
+
+React 19, Vite 8 e Tailwind 4, sem bibliotecas de estado ou de rotas. A estrutura de
+`src/` (fora de `src/medguide`) é:
+
+| Caminho | Papel |
+| --- | --- |
+| `lib/api.ts`, `lib/types.ts` | Cliente da API real e formatos de resposta |
+| `lib/localBackend.ts` | Camada provisória: contas, notificações e sugestões no `localStorage` |
+| `lib/specialties.ts` | Catálogo de especialidades e classificação dos PCDT pelo título |
+| `lib/router.ts`, `components/Link.tsx` | Rotas por hash (`#/feed`, `#/diretrizes/{id}`) |
+| `lib/text.ts` | Divisão do `extracted_text` por documento e página; comparação de versões |
+| `lib/hooks.ts`, `lib/sources.ts` | Carregamento assíncrono e cache do catálogo e das fontes |
+| `components/` | Layout com navegação (`AppShell`), ícones e componentes visuais |
+| `pages/` | Uma tela por rota; `pages/auth` reúne login e cadastro |
+
+O fluxo de dados é: tela → `api.ts` → `/api` no Vite → proxy com token de serviço →
+FastAPI. As telas de contas, notificações e sugestões chamam `localBackend.ts`, que
+mantém a mesma forma assíncrona para ser trocado por chamadas HTTP. O `AppShell`
+carrega o catálogo uma vez e compara as versões atuais com as últimas vistas pelo
+usuário para gerar notificações.
+
+Lacunas conhecidas: não há testes automatizados do frontend nem build de produção
+servido pelo Compose. Também não há autenticação real, e o texto extraído é exibido
+sem a formatação de tabelas.
