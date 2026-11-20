@@ -5,9 +5,11 @@ Monitoramento e versionamento de diretrizes médicas oficiais. O backend usa Pyt
 de Protocolos Clínicos e Diretrizes Terapêuticas (PCDT) da CONITEC: descobre entradas,
 baixa documentos, extrai texto por página e mantém originais e versões observadas.
 
-O frontend React/Vite é uma tela visual de login, sem integração com a API. A leitura
-dos documentos coletados está disponível pela API e pelas exportações descritas
-abaixo. Contas de usuários, tela de leitura, IA e feed ainda não estão implementados.
+O frontend React/Vite lê as diretrizes coletadas pela API: feed com filtros, leitura
+do texto por página, histórico de versões, rastreabilidade e administração das fontes.
+Contas, especialidades, notificações e sugestões de fontes ainda não existem no
+backend; o frontend as simula no navegador (veja [Frontend](#frontend)). IA ainda não
+está implementada.
 
 ## Roteiro de demonstração para o professor
 
@@ -247,11 +249,37 @@ Use `q` para sair do `less`. O arquivo fica em `test-results/asma.txt`, na pasta
 local do projeto, e é ignorado pelo Git. Se não houver versão para o filtro,
 o arquivo estará vazio; confira o passo 6. As consultas não alteram os dados coletados.
 
+### 9. Mostrar os mesmos dados pela interface web
+
+Com os serviços ainda no ar, abra o **PowerShell** do Windows na pasta do projeto e
+inicie o frontend (na primeira vez, rode antes `npm ci`; veja [Frontend](#frontend)):
+
+```powershell
+npm run dev
+```
+
+Abra `http://localhost:5173` e siga, na ordem:
+
+1. **Criar conta**: cadastre um usuário e escolha Pneumologia e Infectologia.
+2. **Feed**: filtre por especialidade, busque `hiv` e alterne entre “Minhas” e “Todas”.
+3. **Diretriz**: abra **Asma**. Mostre a publicação, o ato normativo do catálogo,
+   a busca no texto (por exemplo, `corticoide`) e as abas **Histórico de versões** e
+   **Rastreabilidade**, com os hashes do passo 7. **Original arquivado** baixa o
+   mesmo PDF do endpoint `/api/artifacts/{id}/raw`.
+4. **Sugerir fonte**: envie uma sugestão.
+5. **Sair** e entrar como `admin@medguide.local` / `medguide-admin`. Em
+   **Administração**, mostre as métricas e a fonte CONITEC, aprove a sugestão e abra
+   **Coletas e jobs**.
+6. Volte para a conta do passo 1. Em **Notificações**, mostre o aviso da aprovação.
+
+Explique que o feed, a leitura, as versões e a administração das fontes leem a API
+real. Contas, especialidades, notificações e sugestões ainda são simuladas no
+navegador, porque o backend não tem esses módulos.
+
 Para uma comprovação adicional de integridade, execute a auditoria de originais,
-textos e API em [Desenvolvimento e testes](#desenvolvimento-e-testes). Para mostrar
-a página visual do frontend, siga [Frontend visual](#frontend-visual); ela não lê
-esses documentos. Ao terminar a demonstração, `docker compose down` para os serviços
-e preserva os volumes com as coletas.
+textos e API em [Desenvolvimento e testes](#desenvolvimento-e-testes). Ao terminar a
+demonstração, pare o frontend com `Ctrl+C`; `docker compose down` para os serviços e
+preserva os volumes com as coletas.
 
 ## Executar localmente
 
@@ -475,18 +503,86 @@ Redis reais, sem testes pulados, com 90% de cobertura. Também foram auditados
 132 originais e 132 versões textuais. São resultados daquela execução; as evidências
 e limitações estão em [docs/validation.md](docs/validation.md).
 
-## Frontend visual
+## Frontend
 
-O Compose inicia apenas o backend. Para abrir a tela React/Vite, use Node.js
-20.19+ da linha 20 ou 22.12+ e npm no host, conforme os requisitos das dependências:
+O Compose inicia apenas o backend; o frontend roda no host, com o Vite.
 
-```sh
-npm ci
-npm run dev
-```
+### Primeira execução numa máquina nova
 
-Abra o endereço exibido pelo Vite. `npm run build` gera a aplicação em `dist/`;
-`npm run lint` executa o Oxlint. A tela não autentica usuários nem exibe as coletas.
+1. Suba o backend e confira a API (passo 1 do roteiro). O `.env` precisa existir:
+   o frontend lê dele o `MEDGUIDE_ADMIN_TOKEN`.
+2. Instale o Node.js **22 LTS**, ou 20.19+ da linha 20. A versão está em `.nvmrc`
+   e em `engines` do `package.json`. Confira com `node --version`.
+3. Escolha **um** lugar para rodar o frontend e mantenha-o: o `node_modules` tem
+   binários nativos do sistema operacional, e a pasta é a mesma no Windows e no WSL.
+   - **Windows (recomendado se o projeto está em `C:\`)**: PowerShell na pasta do projeto.
+   - **Ubuntu/WSL**: terminal Ubuntu em `/mnt/c/...`, com Node instalado no Ubuntu.
+
+   Se trocar de sistema, apague `node_modules` e rode `npm ci` de novo.
+4. Na pasta do projeto:
+
+   ```sh
+   npm ci
+   npm run dev
+   ```
+
+5. Abra `http://localhost:5173`, crie uma conta e escolha especialidades.
+
+`npm run build` gera `dist/` e `npm run lint` executa o Oxlint. Não há testes
+automatizados do frontend.
+
+### Como o frontend acessa a API
+
+O Vite encaminha `/api` para `http://127.0.0.1:8000`, ou para `MEDGUIDE_API_URL` se
+essa variável estiver definida no `.env` ou no ambiente. No servidor de
+desenvolvimento, ele adiciona o `MEDGUIDE_ADMIN_TOKEN` a cada requisição, e o token
+não chega ao navegador. Depois de alterar o `.env`, reinicie o `npm run dev`.
+O `npm run preview` (depois do build) usa o mesmo encaminhamento. Não há configuração
+para publicar o `dist/` em um servidor: ele chamaria `/api` sem token.
+
+### Telas
+
+| Tela | Rota | Dados |
+| --- | --- | --- |
+| Login e cadastro | `#/login`, `#/cadastro` | Simulados |
+| Escolha de especialidades | `#/especialidades`, `#/perfil` | Simulados |
+| Feed com filtros | `#/feed` | API (`/api/guidelines`, `/api/sources`) |
+| Diretriz: texto, versões e rastreabilidade | `#/diretrizes/{id}` | API |
+| Notificações | `#/notificacoes` | Simulados, comparando o catálogo da API |
+| Sugerir fonte | `#/sugerir-fonte` | Simulados |
+| Administração: fontes, sugestões, coletas e jobs | `#/admin` | API, exceto sugestões |
+
+**Partes simuladas.** Contas, especialidades escolhidas, notificações e sugestões
+ficam no `localStorage` do navegador, em `src/lib/localBackend.ts`. O arquivo lista
+os endpoints que faltam no backend e usa os formatos de `src/lib/types.ts`; ao
+implementá-los, só esse arquivo muda. A conta de administração de demonstração é
+`admin@medguide.local` / `medguide-admin`. Essa simulação não tem segurança real:
+qualquer pessoa com acesso ao `npm run dev` usa a API com o token de administração.
+
+**Especialidades.** O catálogo da CONITEC não informa a especialidade de cada PCDT.
+`src/lib/specialties.ts` classifica pelo título, e uma diretriz pode ter várias
+especialidades. Revise as regras ao adicionar diretrizes ou fontes.
+
+**Notificações.** O navegador guarda a versão atual de cada diretriz vista pelo
+usuário. Na próxima visita, avisa sobre diretrizes novas e versões novas nas suas
+especialidades. A primeira extração de um documento não gera aviso.
+
+**Dados por navegador.** Cada navegador tem suas próprias contas e sugestões: o que
+um colega cadastra não aparece para outro, e uma sugestão só chega ao administrador
+se ele entrar no mesmo navegador. Para recomeçar do zero, abra o console do navegador
+(F12) e rode `localStorage.removeItem('medguide.local.v1')`. Os dados coletados pela
+API não são afetados.
+
+### Problemas comuns
+
+| Sintoma | Causa e solução |
+| --- | --- |
+| “A API não está respondendo em http://127.0.0.1:8000” | Backend parado. Rode `docker compose up -d` no Ubuntu/WSL e confira `curl http://127.0.0.1:8000/healthz`. |
+| “Invalid administration token” ou “Administration is disabled” | `.env` ausente ou com outro token. Rode `cp .env.example .env` (ou corrija o token) e reinicie o `npm run dev`. |
+| Tela em branco depois de `git pull` ou de renomear arquivos | Cache do Vite desatualizado. Pare com `Ctrl+C` e rode `npm run dev` de novo. |
+| `npm ci` falha com `EPERM` no Windows | O `npm run dev` ainda está aberto e trava arquivos. Pare-o antes de reinstalar. |
+| Erro de binário nativo (`rolldown`, `oxide`, `oxlint`) | O `node_modules` foi instalado no outro sistema (Windows × WSL). Apague-o e rode `npm ci`. |
+| Porta 5173 ocupada | Outro `npm run dev` aberto. Feche-o ou use `npm run dev -- --port 5174`. |
 
 ## Adicionar fonte
 
